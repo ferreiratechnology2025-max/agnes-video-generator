@@ -1,11 +1,13 @@
 # 单元测试覆盖度评估 & GitHub Actions 适配性
 
-> 最近更新：2026-08-14
-> 测试套件：**247 个用例全部通过**（含 `tests/test_core.py` 单元、`tests/mock_regression/` 五管线 mock 回归、
-> `test_path_security.py` / `test_artifacts.py` / `test_cue_aware_srt.py` / `test_narration_cleaning.py`，
-> 以及 **v6.0 手动模式新增** `test_manual_pause.py`（33 用例）+ `test_dependency_graph.py`（21 用例））
-> 总体覆盖率：**58%+**（v6.0 新增 `core/dependency_graph.py` 依赖图模块由 21 用例独立覆盖）
-> 运行环境：本地 `.venv`（Python 3.13，moviepy / edge_tts / fastapi 已装）
+> 最近更新：2026-08-25
+> 测试套件：**367 个用例全部通过**（含 `tests/test_core.py` 单元、`tests/mock_regression/` 五管线 mock 回归、
+> `test_path_security.py` / `test_artifacts.py` / `test_cue_aware_srt.py` / `test_narration_cleaning.py`、
+> **v6.0 手动模式新增** `test_manual_pause.py` + `test_dependency_graph.py`，
+> 以及 **`test_server_app.py`**（13 用例，server.py 应用层：lifespan / 静态资源 / __main__ 入口））
+> 总体覆盖率：**61%+**（v6.0 新增 `core/dependency_graph.py` 依赖图模块独立覆盖；
+> `server.py` 应用层由 `test_server_app.py` 补齐至 **100%**）
+> 运行环境：本地 `.venv`（Python 3.12.5，moviepy / edge_tts / fastapi 已装）
 >
 > **v6.0 增量**：手动模式（P0 暂停机制 / P1 依赖图 / P3 全流水线）测试独立成组，不改变自动模式回归基线。
 
@@ -15,12 +17,13 @@
 
 | 维度 | 结论 |
 |------|------|
-| 单元测试覆盖度 | 总 **58%**；**业务编排层（pipeline）已 58%–81% 覆盖**，模型层 98% |
+| 单元测试覆盖度 | 总 **61%**；**业务编排层（pipeline）已 58%–81% 覆盖**，模型层 98%，`server.py` 应用层 **100%** |
 | 能否放进 GitHub Actions | ✅ **非常适合**——测试在 API 边界处全 mock，无网络、无需 API Key，素材已入库 |
-| 当前最大缺口 | 外部 API 客户端（被有意 mock）、`server.py` HTTP 层（19%）、`config.py` 环境解析（41%） |
-| 立即可补的高价值项 | `server.py` 路由单测（TestClient + mock key）、`config.py` / `error_collector.py` 纯逻辑单测 |
+| 当前最大缺口 | 外部 API 客户端（被有意 mock）、路由层 `video_routes.py`（14%）、`task_routes.py`（37%）、`config.py` 环境解析（61%） |
+| 立即可补的高价值项 | `config.py` / `error_collector.py` / `voices.py` 纯逻辑单测、路由层 TestClient 单测 |
 
-> 本轮已补：`path_security.py`（新增安全模块，0%→**100%**）、`artifacts.py` 级联删除逻辑（19%→**91%**）。
+> 本轮已补：`path_security.py`（0%→**100%**）、`artifacts.py` 级联删除逻辑（19%→**91%**）、
+> `server.py` 应用层（44%→**100%**，`tests/test_server_app.py` 13 用例：lifespan 生命周期 / 静态资源 / __main__ 入口）。
 
 ---
 
@@ -51,6 +54,7 @@
 |------|------|------|
 | `core/path_security.py` | 100% | **本轮新增**安全模块（路径穿越防护），纯逻辑 |
 | `core/artifacts.py` | 91% | **本轮补测**级联删除/清理逻辑（19%→91%） |
+| `server.py` | 100% | **本轮补测**应用层（44%→100%，`test_server_app.py`：lifespan / 静态资源 / __main__ 入口） |
 | `core/dependency_graph.py` | 高 | **v6.0 新增**产物依赖图模块（21 用例独立成组：字段级/场景级/参数级/健壮性） |
 | `models/task.py` | 98% | 任务状态机，业务逻辑基石 |
 | `tests/test_artifacts.py` | 100% | 本轮新增 |
@@ -90,7 +94,9 @@
 | `core/api/rate_limiter.py` | 37% | 限速器（被 mock） | 可单测限流算法本身 |
 | `core/audio/voices.py` | 20% | 音色目录（含网络拉取） | 解析/缓存逻辑可 mock 单测 |
 | `core/api/error_collector.py` | 19% | **纯逻辑** | ⭐ 易补、易暴露 bug |
-| `server.py` | 19% | FastAPI HTTP 层（907 行） | 用 `fastapi.testclient` 做路由单测 |
+| `web/routes/video_routes.py` | 14% | 视频端点 HTTP 层 | 用 `fastapi.testclient` 补路由单测 |
+| `web/routes/utility_routes.py` | 18% | 工具端点 | 同上 |
+| `web/routes/task_routes.py` | 37% | 任务查询/管理端点 | 同上 |
 
 ---
 
@@ -99,8 +105,10 @@
 1. **外部 API 客户端（video/image/chat/models）≈ 530 行仅 15%–29%**
    mock 测试在「协议边界」把整类替换成 `MockAgnes*`，所以真实客户端的 HTTP 重试、错误码解析、限流回退等**全部没走到**。这是**有意设计**——它们的正确性应由「带沙箱 key 的集成测试」保证，而非单元测试。
 
-2. **`server.py` 19%（907 行，734 未覆盖）—— 最大单块缺口**
-   FastAPI 路由层：鉴权、参数校验、任务 CRUD、文件下载等。当前没有任何 HTTP 层测试。可用 `fastapi.testclient.TestClient` + mock API key 低成本补上，能直接锁住「接口契约」。
+2. **`server.py` 应用层已补（44%→100%）**
+   v5.0 模块化拆分后 `server.py` 仅剩 82 语句（lifespan / 静态资源 / __main__ 入口），由 `test_server_app.py` 13 用例全覆盖。
+   剩余 HTTP 层缺口主要在 `web/routes/`：`video_routes.py` 14% / `utility_routes.py` 18% / `task_routes.py` 37% / `image_routes.py` 26%，
+   可用 `fastapi.testclient.TestClient` + mock API key 低成本补上，能直接锁住「接口契约」。
 
 3. **`config.py` 41% / `error_collector.py` 19% / `voices.py` 20%**
    均为「输入 → 输出」型纯函数/类，用 `monkeypatch` 注入环境变量或 mock 网络即可覆盖。
@@ -116,15 +124,16 @@
 |--------|------|----------|------|
 | ✅ 已完成 | `artifacts.py` 级联删除/清理单测 | 防误删、19%→91% | 低（已落地） |
 | ✅ 已完成 | `path_security.py` 安全单测 | 路径穿越防护、0%→100% | 低（已落地） |
-| P0 | `server.py` 路由单测（TestClient + mock key） | 锁接口契约、覆盖率 +10% | 中 |
+| ✅ 已完成 | `server.py` 应用层单测（`test_server_app.py`） | lifespan/静态资源/入口、44%→100% | 低（已落地） |
+| P1 | 路由层单测（`video_routes` / `task_routes` / `utility_routes` 等） | 锁接口契约、覆盖率 +8% | 中 |
 | P1 | `config.py` 环境变量解析单测 | 防配置错误、+6% | 低 |
 | P1 | `error_collector.py` 报错归集单测 | +3% | 低 |
 | P2 | `voices.py` 解析/缓存单测（mock 网络） | +3% | 低 |
 | P2 | `rate_limiter.py` 限流算法单测 | +5% | 低 |
 | — | API 客户端 | 留给集成测试（沙箱 key） | 高 |
 
-> 本轮补测后总覆盖率从 55%→58%（代码量因新增已扩到 ~7075 行，补测仍把比率拉高）。
-> 按上表补完 P0+P1，预计可到 **65%+**，且补齐的是「最容易出生产事故」的逻辑。
+> 本轮补测后总覆盖率从 58%→61%（代码量已扩到 ~7629 行；`test_server_app.py` 将 `server.py` 从 44% 拉到 100%）。
+> 按上表补完 P1，预计可到 **65%+**，且补齐的是「最容易出生产事故」的逻辑。
 >
 > **v6.0 手动模式**：`test_manual_pause.py`（模型/暂停判定/检查点推断/mode 端点/可暂停步骤/poetry 场景级）
 > 与 `test_dependency_graph.py`（依赖图）独立成组，`--cov-fail-under=55` 门禁不受影响。
@@ -158,6 +167,7 @@
 
 ## 七、下一步
 
-1. ✅ 已完成：补 `artifacts.py` / `path_security.py` 单测（本轮），`--cov-fail-under` 上调至 55。
-2. 按第五节 P0 补 `server.py` 路由单测，把 `--cov-fail-under` 逐步提到 65。
-3. 后续为 API 客户端单独建「集成测试」workflow（需 `AGNES_API_KEY` 仓库 secret + 沙箱环境），与单元测试解耦。
+1. ✅ 已完成：补 `artifacts.py` / `path_security.py` 单测，`--cov-fail-under` 上调至 55。
+2. ✅ 已完成：补 `server.py` 应用层单测（`test_server_app.py`，13 用例），`server.py` 覆盖率 44%→100%。
+3. 按第五节 P1 补 `web/routes/` 路由层单测（`video_routes` / `task_routes` / `utility_routes` 等），把 `--cov-fail-under` 逐步提到 65。
+4. 后续为 API 客户端单独建「集成测试」workflow（需 `AGNES_API_KEY` 仓库 secret + 沙箱环境），与单元测试解耦。
