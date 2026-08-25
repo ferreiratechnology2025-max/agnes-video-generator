@@ -6,6 +6,7 @@ import { useGa } from '@/composables/useGa'
 import { useNavigation } from '@/composables/useNavigation'
 import { useToast } from '@/composables/useToast'
 import { useVoice } from '@/composables/useVoice'
+import { copyText } from '@/utils/clipboard'
 import * as api from '@/api'
 import WatermarkToggle from '@/components/shared/WatermarkToggle.vue'
 import SubtitleConfig from '@/components/shared/SubtitleConfig.vue'
@@ -78,35 +79,13 @@ async function togglePoetryPrompt() {
   }
 }
 
-function fallbackCopy(text: string, done: () => void) {
-  const ta = document.createElement('textarea')
-  ta.value = text
-  ta.style.position = 'fixed'
-  ta.style.opacity = '0'
-  document.body.appendChild(ta)
-  ta.select()
-  try {
-    document.execCommand('copy')
-  } catch {
-    /* ignore */
-  }
-  document.body.removeChild(ta)
-  done()
-}
-
 async function copyPoetryPromptWithPoem() {
   await loadPoetryPrompt()
   const full = promptSystem.value + '\n\n' + promptUser.value
-  const done = () => {
-    const old = copyBtnText.value
-    copyBtnText.value = t('copied')
-    setTimeout(() => (copyBtnText.value = old), 1500)
-  }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(full).then(done).catch(() => fallbackCopy(full, done))
-  } else {
-    fallbackCopy(full, done)
-  }
+  await copyText(full)
+  const old = copyBtnText.value
+  copyBtnText.value = t('copied')
+  setTimeout(() => (copyBtnText.value = old), 1500)
 }
 
 async function submitPoetry() {

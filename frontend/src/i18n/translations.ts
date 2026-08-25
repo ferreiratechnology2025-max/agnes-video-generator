@@ -280,6 +280,21 @@ export const T: Record<string, Record<string, string>> = {
     compare: '对比',
     editPlaceholder: '在此输入修改后的内容...',
     noEditableText: '当前检查点没有可编辑的文本产物',
+
+    // ── v6.1：问题反馈模块 ──
+    fbRetryHint: '生成失败可能由模型服务波动、网络超时或限流等偶发因素导致，建议先重试（将从失败环节断点续传）',
+    fbRetryBtn: '重试任务',
+    fbRetriedN: '已重试 {n} 次',
+    fbCollapsedHint: '多次重试仍未解决？反馈问题',
+    fbExpandedHint: '已重试 {n} 次仍未解决，请携带诊断信息反馈',
+    fbDeterministicHint: '该错误可能是参数或内容导致的确定性问题，重试可能无效，建议直接反馈',
+    fbDiagTitle: '诊断信息',
+    fbCopy: '复制诊断信息',
+    fbCopied: '已复制，请粘贴到 GitHub Issue 中',
+    fbFaq: '先查看常见问题',
+    fbGithub: '去 GitHub 提 Issue',
+    fbPrivacyHint: '提交前请检查内容（不包含您的提示词原文）',
+    fbUrlTooLong: '预填内容过长已省略，请粘贴刚才复制的完整诊断信息',
   },
   en: {
     subtitle: 'AI Video, One Click',
@@ -528,6 +543,20 @@ export const T: Record<string, Record<string, string>> = {
     tiMode: 'Mode',
     tiDuration: 'Duration',
 
+    // ── v6.1: issue feedback module ──
+    fbRetryHint: 'Generation failures are often caused by transient factors such as model service fluctuations, network timeouts, or rate limiting. Please retry first (the task resumes from the failed step).',
+    fbRetryBtn: 'Retry Task',
+    fbRetriedN: 'Retried {n} time(s)',
+    fbCollapsedHint: 'Still failing after multiple retries? Report the issue',
+    fbExpandedHint: 'Still failing after {n} retries. Please report with the diagnostic info attached.',
+    fbDeterministicHint: 'This error looks like a deterministic issue caused by parameters or content. Retrying is unlikely to help; reporting directly is recommended.',
+    fbDiagTitle: 'Diagnostic Info',
+    fbCopy: 'Copy Diagnostic Info',
+    fbCopied: 'Copied. Please paste it into the GitHub Issue.',
+    fbFaq: 'Check the FAQ first',
+    fbGithub: 'Open an Issue on GitHub',
+    fbPrivacyHint: 'Please review the content before submitting (your prompt text is not included)',
+    fbUrlTooLong: 'The prefilled content was too long and has been shortened. Please paste the full diagnostic info you just copied.',
   },
   ru: {
     subtitle: 'AI Видео, Один клик',

@@ -6,6 +6,7 @@ import * as api from '@/api'
 import { useTasks } from '@/composables/useTasks'
 import { useProgress } from '@/composables/useProgress'
 import { useToast } from '@/composables/useToast'
+import { copyText } from '@/utils/clipboard'
 
 const props = defineProps<{ taskId: string; checkpoint: string }>()
 
@@ -111,20 +112,6 @@ async function continueAfterConfirm() {
   setProgressMessageHtml(`<span class="text-accent animate-pulse">${t('resuming')}</span>`)
   await startPolling(props.taskId)
   loadTaskList()
-}
-
-async function copyText(text: string) {
-  if (!text) return
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    document.body.removeChild(ta)
-  }
 }
 
 // ── 统一继续按钮：无论是否修改，走同一 approve 逻辑。
