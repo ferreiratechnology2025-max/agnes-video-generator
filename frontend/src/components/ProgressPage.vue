@@ -20,6 +20,8 @@ const {
   taskFailed,
   failedMessage,
   awaitingCheckpoint,
+  retryCount,
+  retryFailedTask,
   mountProgressPage,
   unmountProgressPage,
 } = useProgress()
@@ -84,6 +86,12 @@ function scrollToStep(stepKey: string) {
   if (el) {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+}
+
+// ── v6.1 问题反馈：失败任务重试（断点续传自愈偶发故障）──
+async function onRetryTask() {
+  const taskId = appState.progressTaskId
+  if (taskId) await retryFailedTask(taskId)
 }
 
 // ── 任务信息展示（优化 v6.1：展示用户输入提示词与各项配置）──
@@ -190,6 +198,19 @@ onUnmounted(() => {
           <div v-if="taskFailed" class="mt-4 p-4 bg-red-950 border border-red-800 rounded-lg space-y-2">
             <p class="text-red-400 font-medium">{{ t('genFailed') }}</p>
             <p class="text-muted text-xs">{{ failedMessage || t('genFailedMsg') }}</p>
+            <!-- v6.1 问题反馈：重试引导（偶发故障优先断点续传自愈，多次失败再上报） -->
+            <div class="pt-2 border-t border-red-800/60 space-y-2">
+              <p class="text-muted text-xs leading-relaxed">{{ t('fbRetryHint') }}</p>
+              <div class="flex items-center gap-3 flex-wrap">
+                <button
+                  class="text-xs px-3 py-1.5 bg-accent text-accent-ink rounded-lg transition"
+                  @click="onRetryTask"
+                >
+                  ↻ {{ t('fbRetryBtn') }}
+                </button>
+                <span v-if="retryCount > 0" class="text-xs text-muted">{{ t('fbRetriedN').replace('{n}', String(retryCount)) }}</span>
+              </div>
+            </div>
           </div>
           <!-- 进度消息（HTML 渲染，来自后端安全文案） -->
           <div v-else class="mt-4 text-sm text-muted" v-html="progressMessage"></div>
