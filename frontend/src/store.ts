@@ -18,6 +18,8 @@ export const appState = reactive({
   currentArtifactsTaskId: null as string | null,
   // 配置
   apiKeySource: '' as string, // 'env' | 'config' | ''
+  // v6.1 问题反馈：应用版本（诊断信息用，来自 /api/config.app_version）
+  appVersion: '' as string,
   workspaces: [] as Workspace[],
   activeWorkspace: '' as string,
   workingDirSource: 'config' as string,

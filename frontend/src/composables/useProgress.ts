@@ -6,6 +6,7 @@ import { t } from '@/i18n'
 import { useGa } from './useGa'
 import { useArtifacts } from './useArtifacts'
 import { useToast } from './useToast'
+import { getRetryCount, bumpRetryCount, clearRetryCount } from '@/utils/feedback'
 import type { TaskState, StepDef } from '@/types'
 
 const POLL_INTERVAL = 30000
@@ -28,6 +29,8 @@ const failedMessage = ref('')
 const taskFailed = ref(false)
 // v6.0 手动模式：当前检查点（暂停等待用户操作时非空）
 const awaitingCheckpoint = ref('')
+// v6.1 问题反馈：当前任务的重试次数（驱动反馈区渐进展开）
+const retryCount = ref(0)
 // v6.1：任务未完成但后台无活跃 pipeline → 待续传（展示续传入口）
 const needsResume = ref(false)
 
@@ -116,10 +119,13 @@ async function mountProgressPage(taskId: string, dirName?: string | null) {
     startPolling(taskId)
   } else if (st === 'completed') {
     if (state.final_video_file) showResult(state.final_video_file, taskId)
+    clearRetryCount(taskId)
+    retryCount.value = 0
     clearRunning()
   } else if (st === 'failed') {
     taskFailed.value = true
     failedMessage.value = state.current_message || t('genFailedMsg')
+    retryCount.value = getRetryCount(taskId)
     clearRunning()
   } else if (st === 'pending' && state.current_status === 'awaiting_user') {
     // 暂停等待用户操作：释放并发槽位，不轮询
@@ -156,6 +162,26 @@ async function resumeTask(taskId: string) {
   }
 }
 
+// v6.1 问题反馈：失败任务重试（复用 resume 断点续传；被接受后重试计数 +1，
+// 计数驱动失败面板「先重试、后上报」的渐进引导）
+async function retryFailedTask(taskId: string) {
+  try {
+    const d = await api.resumeTask(taskId)
+    if (!d.ok) {
+      showToast(t('failResume') + (d.detail ? ': ' + d.detail : ''), 3500)
+      return
+    }
+    retryCount.value = bumpRetryCount(taskId)
+    needsResume.value = false
+    taskFailed.value = false
+    setRunning(taskId)
+    setProgressMessageHtml(`<span class="text-accent animate-pulse">${t('resuming')}</span>`)
+    startPolling(taskId)
+  } catch (e: any) {
+    showToast(t('failResume') + (e.message ? ': ' + e.message : ''), 3500)
+  }
+}
+
 // 进度页卸载：停止一切轮询与临时状态
 function unmountProgressPage() {
   stopPolling()
@@ -165,6 +191,7 @@ function unmountProgressPage() {
   awaitingCheckpoint.value = ''
   needsResume.value = false
   taskFailed.value = false
+  retryCount.value = 0
 }
 
 async function pollTaskProgress(taskId: string) {
@@ -197,6 +224,8 @@ async function pollTaskProgress(taskId: string) {
         ...(state.mode ? { mode: state.mode } : {}),
       })
       showResult(state.final_video_file, taskId)
+      clearRetryCount(taskId)
+      retryCount.value = 0
       clearRunning()
       scheduleArtifactRefresh()
     }
@@ -210,6 +239,7 @@ async function pollTaskProgress(taskId: string) {
       clearRunning()
       taskFailed.value = true
       failedMessage.value = state.current_message || t('genFailedMsg')
+      retryCount.value = getRetryCount(taskId)
     }
 
     // v6.0 手动模式：检测暂停等待（PENDING + current_checkpoint）
@@ -276,6 +306,8 @@ export function useProgress() {
     failedMessage,
     awaitingCheckpoint,
     needsResume,
+    retryCount,
+    retryFailedTask,
     resumeTask,
     showProgress,
     mountProgressPage,

@@ -14,6 +14,7 @@ from core.api.key_manager import reset_key_ring
 from core.api.rate_limiter import reset_rate_limiter
 from core.config import (
     AGNES_DOMAIN_MAP,
+    APP_VERSION,
     REGRESSION_WORKING_DIR_ENV,
     WATERMARK_PROMO_TEXT_EN,
     WATERMARK_PROMO_TEXT_ZH,
@@ -51,6 +52,7 @@ async def get_config():
     active_ws = get_active_workspace()
     wm = get_watermark_config()
     data = {
+        "app_version": APP_VERSION,
         "api_key": key[:8] + "..." if key else "",
         "source": source,
         "can_clear": source == "config",

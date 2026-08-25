@@ -386,4 +386,36 @@ for name, color in [('test_ref.png', (100,150,200)), ('test_end.png', (200,150,1
 
 ---
 
-*文档版本：v3.2 | 更新日期：2026-08-13 | 变更：新增 v5.0 优化专项回归（V1-V8）与端点 E11-E13*
+## 十、v6.1 问题反馈模块回归（增量）
+
+> 新增于 v6.1（实施路线图 P5）。不进入 S1/A1-A2 权重计算，作为 v6.1 专项验证
+> 「失败 → 重试 → 反馈」闭环与诊断端点。与 8 场景回归路径互不冲突。
+
+### 10.1 前端反馈闭环场景（手动）
+
+| ID | 场景 | 验证要点 |
+|----|------|---------|
+| F1 | 失败重试引导 | 失败任务面板显示「重试任务」主按钮 + 偶发引导文案；点击后任务重新 running（resume），重试计数 `fb_retry_{taskId}` +1 且跨刷新保持 |
+| F2 | 反馈区渐进展开 | 重试计数 < 2 时反馈区为收起提示行「多次重试仍未解决？」；≥ 2 自动展开；手动展开/收起状态经 `fb_open_{taskId}` 持久化 |
+| F3 | 确定性故障预筛 | `current_message` 命中关键词（如 HTTP 400 / content policy）时直接展开反馈区 + 切换「重试可能无效」文案 + 重试按钮弱化；429/5xx/timeout 文案不命中 |
+| F4 | 复制诊断信息 | 复制完整 Markdown 报告（版本/任务/环节/错误/重试次数/关键配置），弹出「已复制」toast；隐私提示不含 prompt 原文 |
+| F5 | GitHub Issue 引导 | 「去 GitHub 提 Issue」打开预填 title/body 的 issues/new（labels=bug）；超长降级且不报错 |
+
+### 10.2 诊断端点（自动）
+
+| ID | 场景 | 验证要点 |
+|----|------|---------|
+| D1 | 精确匹配 | 任务运行中触发模型调用失败 → `error_logs/` 落盘含 `task_id`；`GET /api/tasks/{id}/diagnostics` 返回 `match_source=exact` 且 `error_logs` 含关联日志 |
+| D2 | 无记录 | 无关联日志时返回 `match_source=none`、`error_logs=[]`（前端静默降级为纯前端版报告） |
+| D3 | 敏感字段 | 响应不含 `prompt` / `response_body` / `system_prompt` / `extra`；`error_message` 截断 |
+
+### 10.3 端点补充
+
+| 端点 | 验证内容 |
+|------|---------|
+| `GET /api/config` | 返回 `app_version`（诊断信息版本字段来源） |
+| `GET /api/tasks/{id}/diagnostics` | 任务存在返回摘要 + 错误列表；任务不存在 404 |
+
+---
+
+*文档版本：v3.3 | 更新日期：2026-08-25 | 变更：新增 v6.1 问题反馈模块回归（F1-F5 / D1-D3）与端点*

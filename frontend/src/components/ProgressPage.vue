@@ -9,6 +9,8 @@ import ProgressHeader from './ProgressHeader.vue'
 import StepTimeline from './StepTimeline.vue'
 import ArtifactCard from './ArtifactCard.vue'
 import CheckpointDetail from './CheckpointDetail.vue'
+import FeedbackPanel from './FeedbackPanel.vue'
+import { isDeterministicError } from '@/utils/feedback'
 
 const {
   progressPct,
@@ -20,6 +22,8 @@ const {
   taskFailed,
   failedMessage,
   awaitingCheckpoint,
+  retryCount,
+  retryFailedTask,
   mountProgressPage,
   unmountProgressPage,
 } = useProgress()
@@ -86,6 +90,12 @@ function scrollToStep(stepKey: string) {
   }
 }
 
+// ── v6.1 问题反馈：失败任务重试（断点续传自愈偶发故障）──
+async function onRetryTask() {
+  const taskId = appState.progressTaskId
+  if (taskId) await retryFailedTask(taskId)
+}
+
 // ── 任务信息展示（优化 v6.1：展示用户输入提示词与各项配置）──
 const taskInfo = ref<any>(null)
 const taskInfoOpen = ref(true)
@@ -134,6 +144,19 @@ const CONFIG_FIELDS: Record<string, { field: string; label: string; fmt?: (v: an
 
 const taskInputs = computed(() => INPUT_FIELDS[appState.currentTaskType] || [])
 const taskConfigs = computed(() => CONFIG_FIELDS[appState.currentTaskType] || [])
+
+// v6.1 问题反馈：诊断报告用的关键配置字符串列表（复用 taskConfigs 展示逻辑）
+const feedbackConfigs = computed(() =>
+  taskConfigs.value
+    .map((c) => {
+      const v = c.fmt ? c.fmt(taskInfo.value?.[c.field]) : taskInfo.value?.[c.field]
+      return v ? `${t(c.label)}: ${v}` : null
+    })
+    .filter((s): s is string => !!s),
+)
+
+// v6.1 问题反馈：错误是否为确定性故障（命中则切换引导文案 + 弱化重试按钮）
+const deterministicError = computed(() => isDeterministicError(failedMessage.value))
 
 onMounted(async () => {
   const taskId = appState.progressTaskId
@@ -190,6 +213,35 @@ onUnmounted(() => {
           <div v-if="taskFailed" class="mt-4 p-4 bg-red-950 border border-red-800 rounded-lg space-y-2">
             <p class="text-red-400 font-medium">{{ t('genFailed') }}</p>
             <p class="text-muted text-xs">{{ failedMessage || t('genFailedMsg') }}</p>
+            <!-- v6.1 问题反馈：重试引导（偶发故障优先断点续传自愈，多次失败再上报） -->
+            <div class="pt-2 border-t border-red-800/60 space-y-2">
+              <!-- 引导文案：确定性故障切换为「重试可能无效」 -->
+              <p class="text-xs leading-relaxed" :class="deterministicError ? 'text-amber-400' : 'text-muted'">
+                {{ deterministicError ? t('fbDeterministicHint') : t('fbRetryHint') }}
+              </p>
+              <div class="flex items-center gap-3 flex-wrap">
+                <button
+                  class="text-xs px-3 py-1.5 transition rounded-lg"
+                  :class="deterministicError ? 'bg-paper-2/40 border border-rule text-muted hover:text-ink-2' : 'bg-accent text-accent-ink hover:opacity-90'"
+                  @click="onRetryTask"
+                >
+                  ↻ {{ t('fbRetryBtn') }}
+                </button>
+                <span v-if="retryCount > 0" class="text-xs text-muted">{{ t('fbRetriedN').replace('{n}', String(retryCount)) }}</span>
+              </div>
+              <!-- v6.1 问题反馈：反馈区（渐进展开 + 复制 + FAQ + GitHub Issue） -->
+              <FeedbackPanel
+                v-if="appState.progressTaskId"
+                :task-id="appState.progressTaskId"
+                :task-type="appState.currentTaskType || 'creative'"
+                :mode="taskInfo?.mode"
+                :failed-step="taskInfo?.current_step || ''"
+                :error-message="failedMessage || ''"
+                :retry-count="retryCount"
+                :configs="feedbackConfigs"
+                @retry="onRetryTask"
+              />
+            </div>
           </div>
           <!-- 进度消息（HTML 渲染，来自后端安全文案） -->
           <div v-else class="mt-4 text-sm text-muted" v-html="progressMessage"></div>

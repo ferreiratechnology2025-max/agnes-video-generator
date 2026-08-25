@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".agnes_config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
+# ═══════════════════════════════════════════════════
+# 应用版本号（v6.1 新增：发版时同步更新，见 docs/dev/release_process.md）
+# ═══════════════════════════════════════════════════
+APP_VERSION = "6.1.0"
+
 # 未配置 API Key 时的统一报错文案（含免费获取与在线体验兜底，全站路由共用）
 API_KEY_MISSING_MSG = (
     "请先配置 API Key。免费获取：https://platform.agnes-ai.com ｜ "

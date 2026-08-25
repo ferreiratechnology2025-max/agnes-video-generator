@@ -18,6 +18,7 @@
 import json
 import logging
 import os
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -27,6 +28,10 @@ import requests as _requests_lib
 logger = logging.getLogger(__name__)
 
 _WORKSPACE_ROOT: Optional[Path] = None
+
+# v6.1 二期：当前任务 ID 上下文（BasePipeline 执行入口 set，record 时落盘 task_id）。
+# 用 contextvar 而非逐层传参，将改动面收敛到 API 模块内部（PRD FR9）。
+_TASK_ID_CTX: ContextVar[str] = ContextVar("error_collector_task_id", default="")
 
 
 def set_workspace_root(path: str) -> None:
@@ -64,6 +69,15 @@ def _get_log_dir() -> Path:
     log_dir = _get_workspace_root() / "error_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
+
+
+def set_error_task_id(task_id: str) -> None:
+    """设置当前上下文的 task_id（v6.1 二期，诊断关联用）。
+
+    由流水线执行入口（``web/deps.run_pipeline``）调用，使后续 ``collect_error``
+    落盘时带上 task_id。通过 contextvar 传递，避免逐层向 API 模块传参。
+    """
+    _TASK_ID_CTX.set(task_id or "")
 
 
 def _extract_from_http_error(exc: Exception) -> tuple[Optional[int], str, str]:
@@ -147,6 +161,8 @@ def collect_error(
         # 限制字段长度，避免日志文件过大
         error_data = {
             "timestamp": now.isoformat(),
+            # v6.1 二期：任务关联（诊断端点精确匹配用；无则留空串）
+            "task_id": _TASK_ID_CTX.get(),
             "model_type": model_type,
             "api_method": api_method,
             "prompt": prompt[:5000] if prompt else "",

@@ -159,6 +159,10 @@ release 内容后续会在**官网开辟板块展示**，并被搜索引擎**独
 8. 若有版本号示例位置需同步（README / docker-compose / AGENTS.md），一并更新
 ```
 
+> **`APP_VERSION` 同步**：自 v6.1 起，`core/config.py` 的 `APP_VERSION` 常量作为「应用版本」通过 `GET /api/config` 暴露给前端（失败面板诊断信息使用）。**发版时必须同步更新**该常量为本版 `vX.Y.Z`，否则失败反馈的诊断信息会显示过期版本号。建议在第 4 步写 release notes 时一并修改（含 3.4 所述、release notes 中体现的版本号）。
+
+> **Docker / npm 页面前置规则**：每个版本的 release 新增内容（`## What's New` 章节）必须自动展示在 **Docker Hub 仓库页**与 **npm 包 README** 的**前部**（顶部），让访问分发页面的用户第一眼看到本版更新。此规则已固化在 CI（第 7 步），发版时无需手工操作；但**缺失 release notes 文档时 CI 会跳过前置并输出 warning**，因此第 4 步的文档是强制项。
+
 > **Docker / npm 页面前置规则**：每个版本的 release 新增内容（`## What's New` 章节）必须自动展示在 **Docker Hub 仓库页**与 **npm 包 README** 的**前部**（顶部），让访问分发页面的用户第一眼看到本版更新。此规则已固化在 CI（第 7 步），发版时无需手工操作；但**缺失 release notes 文档时 CI 会跳过前置并输出 warning**，因此第 4 步的文档是强制项。
 
 ### 用户要求与版本号映射

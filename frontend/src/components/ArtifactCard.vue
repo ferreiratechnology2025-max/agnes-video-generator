@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { t } from '@/i18n'
 import { useArtifacts } from '@/composables/useArtifacts'
+import { copyText } from '@/utils/clipboard'
 import type { Artifact } from '@/types'
 
 const props = defineProps<{ art: Artifact; large?: boolean }>()
@@ -59,16 +60,7 @@ onMounted(() => {
 async function onCopyPath() {
   const p = (props.art as any).abs_path || (props.art as any).path || ''
   if (!p) return
-  try {
-    await navigator.clipboard.writeText(p)
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = p
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    document.body.removeChild(ta)
-  }
+  await copyText(p)
 }
 </script>
 

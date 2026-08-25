@@ -54,6 +54,10 @@ onMounted(async () => {
     if (cfg.api_key) {
       appState.apiKeySource = cfg.source
     }
+    // v6.1 问题反馈：记录应用版本（诊断信息用；缺失时 FeedbackPanel 自兜底拉取）
+    if (cfg.app_version) {
+      appState.appVersion = cfg.app_version
+    }
     await renderWorkspaces()
     if (cfg.watermark !== undefined) {
       appState.watermarkEnabled = !!cfg.watermark.enabled

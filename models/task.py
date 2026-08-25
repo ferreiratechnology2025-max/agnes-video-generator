@@ -194,6 +194,11 @@ class BaseTaskState(BaseModel):
     # ── v6.0：手动模式配置（默认自动模式，向后兼容）──
     manual_config: ManualConfig = Field(default_factory=ManualConfig)
 
+    # ── v6.1 二期：任务时间戳（诊断端点时间窗口匹配兜底用）──
+    # 默认值保证旧 task_state.json 加载时向后兼容（无字段 → 自动补齐）。
+    created_at: str = ""
+    updated_at: str = ""
+
 
 class SimpleVideoTask(BaseTaskState):
     """简单视频任务（类型 1）
