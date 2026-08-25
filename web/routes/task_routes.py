@@ -1,7 +1,10 @@
 """任务路由：列表 / 详情 / 恢复 / 停止 / 并发状态。"""
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
@@ -88,6 +91,134 @@ async def get_task(task_id: str):
     # 「服务重启后遗留的 pending/queued（需点击续传）」，避免误导用户。
     data["active"] = task_id in app_state.active_pipelines
     return data
+
+
+# ── v6.1 二期：任务诊断端点 ──
+_ERROR_LOG_MAX_MESSAGE = 800  # 错误消息截断长度（诊断报告用，不含 prompt 全文与 response_body）
+
+# 需要从 error log 暴露给前端的字段（敏感字段：prompt / system_prompt / response_body / extra 一律不返回）
+_DIAG_LOG_FIELDS = (
+    "timestamp",
+    "task_id",
+    "model_type",
+    "api_method",
+    "error_type",
+    "status_code",
+    "error_message",
+    "retry_count",
+)
+
+
+def _find_error_log_dir() -> Path:
+    """定位 error_logs 目录（与 error_collector 一致：激活工作空间根 / server 目录）。"""
+    from core.api.error_collector import _get_log_dir
+
+    return _get_log_dir()
+
+
+def _iter_error_logs() -> list[dict]:
+    """读取 error_logs/ 下全部 JSON 日志，非法/损坏条目跳过。"""
+    log_dir = _find_error_log_dir()
+    if not log_dir.exists():
+        return []
+    logs = []
+    for p in sorted(log_dir.glob("*.json")):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                logs.append(json.load(f))
+        except Exception:
+            continue
+    return logs
+
+
+def _sanitize_log(log: dict) -> dict:
+    """仅暴露诊断所需字段，杜绝 prompt / response_body / extra 泄漏。"""
+    out = {}
+    for k in _DIAG_LOG_FIELDS:
+        v = log.get(k, "")
+        if k == "error_message":
+            v = (v or "")[: _ERROR_LOG_MAX_MESSAGE]
+        out[k] = v
+    return out
+
+
+@router.get("/api/tasks/{task_id}/diagnostics")
+async def get_task_diagnostics(task_id: str):
+    """返回任务摘要 + 该任务关联的模型调用错误详情（v6.1 二期，PRD FR9）。
+
+    任务摘要：status / current_step / current_message / 时间戳。
+    错误列表：优先 ``task_id`` 精确匹配；不足时按任务时间窗口（created_at ~ updated_at
+    + 2h 余量）兜底，避免串入无关任务的旧日志。字段不含 prompt 全文与 response_body，
+    error_message 截断。
+
+    前端在 FeedbackPanel 展开时拉取；端点失败 / 404 时前端静默降级为纯前端版报告。
+    """
+    dir_name = helpers.find_dir_name(task_id)
+    tm = TaskManager(task_id, dir_name=dir_name)
+    state = tm.load()
+    if not state:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    summary = {
+        "task_id": task_id,
+        "task_type": state.task_type,
+        "status": state.status,
+        "current_step": state.current_step,
+        "current_message": (state.current_message or "")[:_ERROR_LOG_MAX_MESSAGE],
+        "created_at": state.created_at or "",
+        "updated_at": state.updated_at or "",
+    }
+
+    # 精确匹配优先：error log 中 task_id == 本任务
+    logs = _iter_error_logs()
+    exact = [log for log in logs if log.get("task_id") == task_id]
+
+    # 时间窗口兜底：created_at ~ updated_at（+ 2h 余量），且未在精确集合中
+    windowed = []
+    if len(exact) < 1:
+        start = _parse_ts(state.created_at)
+        end = _parse_ts(state.updated_at)
+        if start or end:
+            if end is None:
+                end = start + timedelta(hours=2)
+            else:
+                end = end + timedelta(hours=2)
+            windowed = [
+                log for log in logs
+                if log.get("task_id") != task_id and _in_window(log.get("timestamp"), start, end)
+            ]
+
+    matched = (exact + windowed)[:20]
+    logger.info(f"[Diagnostics] Task {task_id}: {len(exact)} exact + {len(windowed)} windowed matches")
+    return {
+        "ok": True,
+        "task_id": task_id,
+        "summary": summary,
+        "match_source": "exact" if exact else ("window" if windowed else "none"),
+        "error_logs": [_sanitize_log(log) for log in matched],
+    }
+
+
+def _parse_ts(value: str) -> datetime | None:
+    """解析 ISO 时间戳；失败返回 None。"""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _in_window(ts_value: str, start: datetime | None, end: datetime | None) -> bool:
+    """判断时间戳是否落在 [start, end] 窗口内。"""
+    ts = _parse_ts(ts_value)
+    if ts is None:
+        return False
+    if start and ts < start:
+        return False
+    if end and ts > end:
+        return False
+    return True
 
 
 @router.post("/api/tasks/{task_id}/resume")

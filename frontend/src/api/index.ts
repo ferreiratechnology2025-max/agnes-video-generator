@@ -103,6 +103,11 @@ export function deleteTask(taskId: string) {
   return fetch('/api/tasks/' + taskId, { method: 'DELETE' }).then((r) => r.json())
 }
 
+// ── v6.1 问题反馈：任务诊断（二期）──
+export function getTaskDiagnostics(taskId: string) {
+  return request('/api/tasks/' + taskId + '/diagnostics')
+}
+
 // ── 产物 ──
 export function getArtifacts(taskId: string) {
   return request('/api/tasks/' + taskId + '/artifacts')

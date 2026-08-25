@@ -5,6 +5,7 @@
 > **配套文档**：
 > - 部署/使用：`docs/public/getting-started.md`（四种部署方式）、`docs/public/usage.md`、`docs/public/faq.md`
 > - 手动模式（v6.0）：`docs/public/manual_mode_guide.md`（用户指南）+ `docs/plans/v6.0/manual_mode_PRD.md`（方案）+ `docs/plans/v6.0/implementation_plan.md`（实施路线图，含分阶段状态）
+> - 问题反馈（v6.1）：`docs/plans/v6.1/issue_feedback_PRD.md`（方案）+ `docs/plans/v6.1/implementation_plan.md`（实施路线图）；前端反馈区 `frontend/src/components/FeedbackPanel.vue` + `frontend/src/utils/feedback.ts`；诊断端点 `GET /api/tasks/{id}/diagnostics`
 > - 架构/技术栈：`docs/public/architecture.md`
 > - API 端点：`docs/public/api.md`
 > - 流水线产物逻辑：`docs/dev/pipeline_products.md`（权威参考）
@@ -242,7 +243,7 @@ agnes-video-generator/
 | `[Compositor]` | compositor/ concatenator/processor |
 | `[Watermark]` | watermark.py |
 | `[Image]` / `[AgnesImage]` / `[AgnesVideo]` / `[AgnesChat]` | 图片流程 / 各 API 模块 |
-| `[RateLimiter]` / `[ErrorCollector]` | rate_limiter.py / error_collector.py |
+| `[RateLimiter]` / `[ErrorCollector]` / `[Diagnostics]` | rate_limiter.py / error_collector.py / task_routes.py 诊断端点 |
 | `[Artifacts]` | artifacts.py |
 | `[TaskManager]` | task_manager.py |
 | `[Screenwriter]` | screenwriter.py |

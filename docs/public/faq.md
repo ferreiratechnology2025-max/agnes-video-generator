@@ -32,6 +32,17 @@ Yes. Pre-built images are published to both [GHCR](https://github.com/lcy362/agn
 
 Absolutely. The project is designed for self-hosting. Just clone the repo, run `./start.sh`, and the server starts on `http://localhost:8765`. No external dependencies, no cloud lock-in. See the [Quick Start](./getting-started.md) section.
 
+### What should I do when generation fails?
+
+Most failures are caused by **transient factors** such as model service fluctuations, network timeouts, or rate limiting. In the in-app **failure panel**, click **Retry Task** first — the task resumes from the failed step (checkpoint-based), and most cases recover on their own without resubmitting.
+
+If it still fails after several retries (≥ 2), the feedback area **auto-expands**, letting you copy the diagnostic info in one click and jump to a pre-filled GitHub Issue — no need to describe your environment manually.
+
 ### How do I get help or report issues?
 
-Check the [GitHub Issues](https://github.com/lcy362/agnes-video-generator/issues) page for existing reports or open a new one. The project also includes a comprehensive `AGENTS.md` for AI-agent-assisted debugging. For feature requests, bug reports, or questions, the Issues page is the best place.
+Feedback is available both in-app and on the official site:
+
+- **In-app one-click reporting**: when a task fails, the failure panel offers **Copy Diagnostic Info** and **Open a GitHub Issue** buttons, automatically attaching the app version, task type, failed step, error message, and retry count to help maintainers pinpoint the problem.
+- **Official site / GitHub**: you can also visit the [GitHub Issues](https://github.com/lcy362/agnes-video-generator/issues) page to check existing reports or open a new one. The project also includes a comprehensive `AGENTS.md` for AI-agent-assisted debugging.
+
+> 💡 Tip: before submitting an issue, try retrying as described in "What should I do when generation fails?" to reduce duplicate reports of transient failures.

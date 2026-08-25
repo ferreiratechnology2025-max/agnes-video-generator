@@ -5,7 +5,7 @@
 > **关联文档**：`docs/plans/v6.1/issue_feedback_PRD.md`（方案权威）· `docs/dev/regression_test_plan.md`（回归）· `docs/dev/release_process.md`（发版）· `AGENTS.md`（验证清单 / 触发词）
 >
 > **版本**：v1.0（2026-08-25）
-> **状态**：🟡 规划完成（未开工）
+> **状态**：🟢 实施完成（P0–P5 全部完成；P5-T4 发版由用户触发）
 
 ---
 
@@ -24,12 +24,12 @@
 
 | 阶段 | 名称 | 内容摘要 | 依赖 | 状态 |
 |------|------|---------|------|------|
-| P0 | 基座准备 | `APP_VERSION` 常量 + `/api/config` 字段 + `utils/clipboard.ts` + i18n 文案 key 骨架 | 无 | 🟡 |
-| P1 | 重试引导闭环 | 失败重试计数持久化 + 失败面板「重试任务」按钮 + 引导文案 | P0 | 🟡 |
-| P2 | 反馈区闭环 | `FeedbackPanel` 组件 + 诊断信息拼接 + 复制 + 确定性预筛 + 渐进展开 | P0/P1 | 🟡 |
-| P3 | GitHub 与官网侧 | issue 模板 + 预填链接 + `faq.md`/`faq.zh.md` 更新 + `release_process.md` 补步骤 | P2 | 🟡 |
-| P4 | 诊断端点（二期） | `error_collector` task_id 关联 + 任务时间戳 + `GET /api/tasks/{id}/diagnostics` + 前端合并 | P2 | 🟡 |
-| P5 | 收尾与验收 | 回归条目 + AGENTS.md 更新 + 全量自检 + 发版准备 | P1–P4 | 🟡 |
+| P0 | 基座准备 | `APP_VERSION` 常量 + `/api/config` 字段 + `utils/clipboard.ts` + i18n 文案 key 骨架 | 无 | 🟢 |
+| P1 | 重试引导闭环 | 失败重试计数持久化 + 失败面板「重试任务」按钮 + 引导文案 | P0 | 🟢 |
+| P2 | 反馈区闭环 | `FeedbackPanel` 组件 + 诊断信息拼接 + 复制 + 确定性预筛 + 渐进展开 | P0/P1 | 🟢 |
+| P3 | GitHub 与官网侧 | issue 模板 + 预填链接 + `faq.md`/`faq.zh.md` 更新 + `release_process.md` 补步骤 | P2 | 🟢 |
+| P4 | 诊断端点（二期） | `error_collector` task_id 关联 + 任务时间戳 + `GET /api/tasks/{id}/diagnostics` + 前端合并 | P2 | 🟢 |
+| P5 | 收尾与验收 | 回归条目 + AGENTS.md 更新 + 全量自检 + 发版准备 | P1–P4 | 🟢 |
 
 > 阶段内容源自 PRD §四；验收对照 PRD §八逐条勾验。
 

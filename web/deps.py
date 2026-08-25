@@ -125,6 +125,10 @@ def mark_task_queued(task_manager: TaskManager) -> None:
 
 async def run_pipeline(pipeline: BasePipeline, state: BaseTaskState):
     """通用 Pipeline 执行包装器。"""
+    # v6.1 二期：进入流水线执行上下文即登记 task_id，供 error_collector 落盘关联（诊断端点用）
+    from core.api.error_collector import set_error_task_id
+
+    set_error_task_id(pipeline.task_id)
     try:
         logger.info(f"[Pipeline] Starting run for task {pipeline.task_id}, type={state.task_type}")
         _refresh_task_manifests(state, pipeline)  # 初始产物清单

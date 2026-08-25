@@ -1,9 +1,32 @@
 /**
  * 问题反馈模块公共工具（v6.1）。
  *
- * 当前包含按任务持久化的重试计数（localStorage）。
- * 确定性预筛 / 诊断报告拼接 / GitHub Issue 链接构造见后续阶段增量。
+ * 包含：
+ * - 按任务持久化的重试计数（localStorage）
+ * - 确定性故障预筛（保守关键词匹配）
+ * - 诊断信息报告拼接（复制 / GitHub Issue 预填共用）
+ * - GitHub Issue 链接构造（含编码长度截断与降级）
  */
+
+// ── 常量 ──
+
+/** 重试次数达到该阈值后反馈区自动展开（PRD FR2） */
+export const RETRY_THRESHOLD = 2
+
+/** 错误消息进入报告的最大字符数 */
+const ERROR_MESSAGE_MAX = 2000
+
+/**
+ * Issue 预填 body 的原始字符数上限（PRD FR6.2：预填截断上限 4000 字符）。
+ * 由于 body 会作为 URL query 传递，编码后可能翻倍以上（中文约 3×），
+ * 4000 字符足以保证编码后仍处于浏览器/网关可接受范围内；超限走降级。
+ */
+const ISSUE_BODY_MAX_RAW = 4000
+
+export const GITHUB_REPO = 'https://github.com/lcy362/agnes-video-generator'
+export const FAQ_URL = 'https://video.lichuanyang.top/faq'
+
+// ── 重试计数（localStorage 持久化） ──
 
 const RETRY_COUNT_PREFIX = 'fb_retry_'
 
@@ -45,4 +68,131 @@ export function clearRetryCount(taskId: string): void {
   } catch {
     /* ignore */
   }
+}
+
+// ── 反馈区展开状态（用户手动覆盖时持久化） ──
+
+const FEEDBACK_OPEN_PREFIX = 'fb_open_'
+
+/**
+ * 读取用户对反馈区展开/收起的手动覆盖；未操作过返回 null（走自动策略）。
+ */
+export function getFeedbackOpenOverride(taskId: string): boolean | null {
+  if (!taskId) return null
+  try {
+    const v = localStorage.getItem(FEEDBACK_OPEN_PREFIX + taskId)
+    if (v === '1') return true
+    if (v === '0') return false
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+/**
+ * 记录用户手动展开/收起的覆盖状态。
+ */
+export function setFeedbackOpenOverride(taskId: string, open: boolean): void {
+  if (!taskId) return
+  try {
+    localStorage.setItem(FEEDBACK_OPEN_PREFIX + taskId, open ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+// ── 确定性故障预筛 ──
+
+/**
+ * 确定性故障的保守匹配模式。
+ * 注意：绝不能命中 429 / 5xx / timeout 等偶发故障（这类必须走重试引导）。
+ */
+const DETERMINISTIC_PATTERNS: RegExp[] = [
+  /\bHTTP\s*40[0-4]\b/i, // HTTP 400~404：参数 / 鉴权 / 资源错误
+  /\b40[0-4]\s*(Client Error|Bad Request|Unauthorized|Forbidden|Not Found)\b/i, // requests HTTPError 文案
+  /invalid\s*(api\s*)?key/i,
+  /unauthorized/i,
+  /content\s*(policy|moderation)/i,
+  /审核|敏感|违规|不合规|内容安全/,
+]
+
+/**
+ * 判断错误消息是否为确定性故障（重试大概率无效）。
+ * 误判只影响引导顺序，用户始终可手动重试与反馈。
+ */
+export function isDeterministicError(message: string): boolean {
+  if (!message) return false
+  return DETERMINISTIC_PATTERNS.some((p) => p.test(message))
+}
+
+// ── 诊断信息报告 ──
+
+export interface DiagnosticInput {
+  appVersion: string
+  taskId: string
+  taskType: string
+  mode?: string
+  failedStep: string
+  errorMessage: string
+  retryCount: number
+  /** 关键配置，已格式化为「名称: 值」字符串列表 */
+  configs: string[]
+}
+
+/**
+ * 拼接 Markdown 诊断报告（复制与 Issue 预填共用同一份内容）。
+ * 隐私约定：不含用户提示词原文，错误消息截断 2000 字符。
+ */
+export function buildDiagnosticReport(d: DiagnosticInput): string {
+  const lines: string[] = []
+  lines.push('## 诊断信息（Agnes Video Generator）')
+  lines.push(`- 应用版本: ${d.appVersion || '未知'}`)
+  lines.push(`- 任务 ID: ${d.taskId}`)
+  lines.push(`- 任务类型: ${d.taskType}`)
+  if (d.mode) lines.push(`- 生成模式: ${d.mode}`)
+  lines.push(`- 失败环节: ${d.failedStep || '未知'}`)
+  lines.push(`- 已重试次数: ${d.retryCount}`)
+  if (d.configs.length) lines.push(`- 关键配置: ${d.configs.join(' / ')}`)
+  lines.push(`- 环境: ${navigator.userAgent}`)
+  lines.push('')
+  lines.push('### 错误信息')
+  lines.push('```')
+  lines.push((d.errorMessage || '').slice(0, ERROR_MESSAGE_MAX))
+  lines.push('```')
+  lines.push('')
+  lines.push('### 复现步骤')
+  lines.push('<!-- 请补充：操作过程与相关配置 -->')
+  lines.push('')
+  lines.push('### 期望行为')
+  lines.push('<!-- 请补充 -->')
+  return lines.join('\n')
+}
+
+// ── GitHub Issue 链接构造 ──
+
+/**
+ * 生成 Issue 标题。
+ */
+export function buildIssueTitle(taskType: string, failedStep: string): string {
+  return failedStep
+    ? `[Bug] ${taskType} 任务在 ${failedStep} 环节失败`
+    : `[Bug] ${taskType} 任务生成失败`
+}
+
+/**
+ * 构造预填 title/body 的 issues/new 链接。
+ *
+ * body 编码后超过上限时逐步截断（并标注省略）；返回 truncated 供调用方提示
+ * 用户粘贴已复制的完整诊断信息。
+ */
+export function buildIssueUrl(title: string, body: string): { url: string; truncated: boolean } {
+  let b = body
+  let truncated = false
+  // 原始字符数超上限 → 逐步截断并标注省略（PRD FR6.2：4000 字符上限 + FR6.3 降级）
+  if (b.length > ISSUE_BODY_MAX_RAW) {
+    b = b.slice(0, ISSUE_BODY_MAX_RAW) + '\n\n…（内容过长已省略，请粘贴完整的诊断信息）'
+    truncated = true
+  }
+  const url = `${GITHUB_REPO}/issues/new?labels=bug&title=${encodeURIComponent(title)}&body=${encodeURIComponent(b)}`
+  return { url, truncated }
 }

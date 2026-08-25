@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import tempfile
+from datetime import datetime
 from typing import Optional
 
 from core.config import get_working_dir
@@ -62,6 +63,11 @@ class TaskManager:
         self._ensure_dir()
         self._state = state
         self._state.task_id = self.task_id
+        # v6.1 二期：任务创建时间戳（诊断端点时间窗口匹配兜底用）
+        now = datetime.now().isoformat(timespec="seconds")
+        if not self._state.created_at:
+            self._state.created_at = now
+        self._state.updated_at = now
         self._save()
         logger.info(f"[TaskManager] Created task {self.task_id}, type={self._state.task_type}")
         return self._state
@@ -132,6 +138,8 @@ class TaskManager:
         """
         self._ensure_dir()
         if self._state and self._task_file:
+            # v6.1 二期：每次落盘刷新 updated_at（诊断端点时间窗口匹配用）
+            self._state.updated_at = datetime.now().isoformat(timespec="seconds")
             task_dir = os.path.dirname(self._task_file)
             tmp_fd, tmp_path = tempfile.mkstemp(dir=task_dir, suffix=".tmp")
             try:
