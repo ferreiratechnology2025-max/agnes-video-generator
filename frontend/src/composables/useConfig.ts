@@ -121,7 +121,10 @@ function isBetaModel(m: string): boolean {
 }
 
 function isPaidModel(m: string): boolean {
-  return typeof m === 'string' && /agnes-2\.5-pro|agnes-2\.5-pro-alpha/.test(m)
+  return (
+    typeof m === 'string' &&
+    (/agnes-2\.5-pro|agnes-2\.5-pro-alpha/.test(m) || m === 'agnes-video-2.5')
+  )
 }
 
 const betaHintVisible = computed(() => {
@@ -135,6 +138,7 @@ async function loadModels() {
     if (r.ok) {
       const d = await r.json()
       if (d.models) appState.modelListCache = d.models
+      if (d.video_capabilities) appState.videoCapabilities = d.video_capabilities
     }
   } catch (e) {
     console.error('load /api/models failed:', e)
@@ -155,6 +159,7 @@ async function syncModels() {
     if (r.ok) {
       const d = await r.json()
       if (d.models) appState.modelListCache = d.models
+      if (d.video_capabilities) appState.videoCapabilities = d.video_capabilities
       modelSyncStatus.value = 'ok'
       setTimeout(() => (modelSyncStatus.value = 'idle'), 1500)
     } else {

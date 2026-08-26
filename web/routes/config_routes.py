@@ -27,6 +27,7 @@ from core.config import (
     get_api_keys_source,
     get_api_keys_with_sources,
     get_selected_models,
+    get_video_model_capabilities,
     get_watermark_config,
     get_workspaces,
     load_config,
@@ -283,11 +284,21 @@ async def list_models(refresh: bool = False):
         and _MODEL_CACHE["models"] is not None
         and (now - _MODEL_CACHE["ts"]) < _MODEL_CACHE["ttl"]
     ):
-        return {"ok": True, "models": _MODEL_CACHE["models"], "cached": True}
+        return {
+            "ok": True,
+            "models": _MODEL_CACHE["models"],
+            "cached": True,
+            "video_capabilities": get_video_model_capabilities(),
+        }
     grouped = fetch_available_models(key)
     _MODEL_CACHE["models"] = grouped
     _MODEL_CACHE["ts"] = now
-    return {"ok": True, "models": grouped, "cached": False}
+    return {
+        "ok": True,
+        "models": grouped,
+        "cached": False,
+        "video_capabilities": get_video_model_capabilities(),
+    }
 
 
 @router.post("/api/config/models")

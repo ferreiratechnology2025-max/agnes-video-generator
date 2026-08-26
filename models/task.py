@@ -213,6 +213,8 @@ class SimpleVideoTask(BaseTaskState):
     reference_image: str = ""
     end_frame_image: str = ""
     duration: int = 5
+    # v6.2：2.5 系列模型分辨率档位（720P/960P/2K；v2.0 忽略，默认 720P）
+    video_size: str = "720P"
     seed: Optional[int] = None
     negative_prompt: Optional[str] = None
     system_prompt: str = ""

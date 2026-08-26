@@ -10,7 +10,14 @@ from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from core.config import API_KEY_MISSING_MSG, DURATION_FRAME_MAP, get_api_key
+from core.config import (
+    API_KEY_MISSING_MSG,
+    DURATION_FRAME_MAP,
+    VIDEO_25_DURATIONS,
+    get_api_key,
+    get_selected_models,
+    is_v25_video_model,
+)
 from core.pipelines import ALL_CHECKPOINTS
 from core.pipelines.poetry_video import POETRY_SUBTITLE_STYLE
 from core.screenwriter import build_poetry_scene_prompt
@@ -135,6 +142,7 @@ async def create_simple_task(
     system_prompt: str = Form(""),
     reference_image: UploadFile = File(None),
     end_frame_image: UploadFile = File(None),
+    video_size: Optional[str] = Form(None),
 ):
     """创建简单视频任务（类型 1）。"""
     api_key = get_api_key()
@@ -148,10 +156,13 @@ async def create_simple_task(
             status_code=422,
             detail=f"mode 必须为 {_VALID_MODES} 之一，当前: {mode}",
         )
-    if duration not in DURATION_FRAME_MAP:
+    # v6.2：2.5 系列模型时长档位为 4–12 秒；v2.0 仍用 DURATION_FRAME_MAP 档位
+    video_model = get_selected_models().get("video") or ""
+    valid_durations = VIDEO_25_DURATIONS if is_v25_video_model(video_model) else list(DURATION_FRAME_MAP.keys())
+    if duration not in valid_durations:
         raise HTTPException(
             status_code=422,
-            detail=f"duration 必须为 {sorted(DURATION_FRAME_MAP.keys())} 之一，当前: {duration}",
+            detail=f"duration 必须为 {sorted(valid_durations)} 之一，当前: {duration}",
         )
     if len(prompt) > 5000:
         raise HTTPException(status_code=422, detail="prompt 最多 5000 字符")
@@ -174,6 +185,7 @@ async def create_simple_task(
         duration=duration,
         video_width=video_width,
         video_height=video_height,
+        video_size=video_size or "720P",
         seed=seed,
         negative_prompt=negative_prompt,
         system_prompt=system_prompt,

@@ -14,7 +14,12 @@ import requests
 from core.api.error_collector import collect_error, collect_error_from_exception
 from core.api.key_manager import get_key_ring
 from core.api.rate_limiter import get_rate_limiter, get_video_submit_limiter
-from core.config import get_agnes_base_url, get_agnes_api_root
+from core.config import (
+    VIDEO_ASPECT_RATIOS,
+    get_agnes_api_root,
+    get_agnes_base_url,
+    is_v25_video_model,
+)
 from utils.image_normalizer import normalize_reference_path
 from utils.video import download_video
 
@@ -236,9 +241,11 @@ class AgnesVideoAPI:
         poll_count = 0
         consecutive_failures = 0
         start_time = asyncio.get_event_loop().time()
+        # 2.5 系列查询需带 model_name（text 模式可省略，但带上更通用）
+        model_param = f"&model_name={self.model}" if is_v25_video_model(self.model) else ""
         curl_cmd = (
             f'curl -s -H "Authorization: Bearer $AGNES_API_KEY" '
-            f'"{get_agnes_api_root()}/agnesapi?video_id={video_id}"'
+            f'"{get_agnes_api_root()}/agnesapi?video_id={video_id}{model_param}"'
         )
         while True:
             # M2: 每次轮询前检查停止信号
@@ -271,7 +278,7 @@ class AgnesVideoAPI:
                     resp = await asyncio.wait_for(
                         asyncio.to_thread(
                             requests.get,
-                            f"{get_agnes_api_root()}/agnesapi?video_id={video_id}",
+                            f"{get_agnes_api_root()}/agnesapi?video_id={video_id}{model_param}",
                             headers=self._auth_headers(),
                             timeout=15,
                         ),
@@ -525,6 +532,17 @@ class AgnesVideoAPI:
         negative_prompt: Optional[str] = None,
         **kwargs,
     ) -> str:
+        # 2.5 系列模型（v6.2）：新参数协议（mode/seconds/size/aspect_ratio）
+        if is_v25_video_model(self.model):
+            return await self._submit_video_v25(
+                prompt=prompt,
+                reference_image_paths=reference_image_paths,
+                duration=duration,
+                width=width,
+                height=height,
+                seed=seed,
+                **kwargs,
+            )
         num_frames, frame_rate = self._get_frame_config(duration, width, height)
 
         payload: dict = {
@@ -564,6 +582,90 @@ class AgnesVideoAPI:
 
         logger.info(f"[AgnesVideo] {mode_desc}: {prompt[:80]}...")
 
+        video_id = await self._submit_with_retry(payload, mode_desc)
+        logger.info(f"[AgnesVideo] Video submitted: {video_id[:20]}...")
+        return video_id
+
+    @staticmethod
+    def _width_height_to_aspect_ratio(width: int, height: int) -> str:
+        """将像素宽高映射到最接近的 2.5 系列 aspect_ratio 枚举。
+
+        找不到精确比例时取误差最小的档位（默认 16:9）。
+        """
+        if not width or not height:
+            return "16:9"
+        ratio = width / height
+        best = "16:9"
+        best_dist = float("inf")
+        for ar in VIDEO_ASPECT_RATIOS:
+            w, h = ar.split(":")
+            target = int(w) / int(h)
+            dist = abs(ratio - target)
+            if dist < best_dist:
+                best_dist = dist
+                best = ar
+        return best
+
+    async def _submit_video_v25(
+        self,
+        prompt: str,
+        reference_image_paths: List[str],
+        duration: Optional[int] = None,
+        width: int = 1152,
+        height: int = 768,
+        seed: Optional[int] = None,
+        **kwargs,
+    ) -> str:
+        """2.5 / 2.5-flash 新协议提交：mode / seconds / size / aspect_ratio。
+
+        与 v2.0 的关键差异：
+        - size 固定 720P（flash）或 720P/960P/2K（2.5）；不传 width/height/num_frames
+        - seconds 为字符串 "4"–"12"
+        - 单参考图 → reference(images)；多图 → keyframe(first_frame + last_frame)
+        - 不支持 negative_prompt（忽略）
+        """
+        # 时长：duration(秒) → seconds 字符串（4–12，超界截断）
+        secs = int(duration) if duration else 5
+        seconds = str(max(4, min(secs, 12)))
+        # 分辨率：flash 固定 720P；2.5 用 video_size 参数（缺省 720P）
+        size = kwargs.get("video_size") or "720P"
+        if self.model == "agnes-video-2.5-flash":
+            size = "720P"
+        aspect_ratio = self._width_height_to_aspect_ratio(width, height)
+
+        payload: dict = {
+            "model": self.model,
+            "prompt": prompt,
+            "mode": "text",
+            "seconds": seconds,
+            "size": size,
+            "aspect_ratio": aspect_ratio,
+        }
+        if seed is not None:
+            payload["seed"] = seed
+
+        # 参考图解析（与 v2.0 一致：归一化 + 上传为公开 URL）
+        resolved_refs = []
+        for p in reference_image_paths:
+            norm = await asyncio.to_thread(normalize_reference_path, p, width, height)
+            resolved_refs.append(await self._resolve_image_ref(norm))
+        n_refs = len(resolved_refs)
+
+        if n_refs == 1:
+            payload["mode"] = "reference"
+            payload["images"] = resolved_refs
+            mode_desc = "reference (1 image)"
+        elif n_refs >= 2:
+            # v6.2.1: Agnes 2.5 系列 keyframe 模式固定输出 704x704 正方形
+            # （忽略 aspect_ratio，竖屏/横屏画面会被拉伸，人物显宽）。
+            # 降级为 reference 模式（多图参考，≤5 张），输出遵循 aspect_ratio。
+            payload["mode"] = "reference"
+            payload["images"] = resolved_refs[:5]
+            mode_desc = f"reference ({n_refs} images, keyframe fallback)"
+        else:
+            mode_desc = "text-to-video"
+
+        logger.info(f"[AgnesVideo] {mode_desc}: {prompt[:80]}...")
         video_id = await self._submit_with_retry(payload, mode_desc)
         logger.info(f"[AgnesVideo] Video submitted: {video_id[:20]}...")
         return video_id

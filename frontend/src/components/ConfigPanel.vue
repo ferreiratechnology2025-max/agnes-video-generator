@@ -5,6 +5,7 @@ import { appState, getCollapsePrefs, setCollapsePref } from '@/store'
 import { useConfig } from '@/composables/useConfig'
 import { useVoice } from '@/composables/useVoice'
 import { useGa } from '@/composables/useGa'
+import { useVideoModelCaps } from '@/composables/useVideoModelCaps'
 
 const { trackEvent } = useGa()
 const {
@@ -36,6 +37,22 @@ const {
   browseDirectory,
   addWorkspace,
 } = useConfig()
+
+// v6.2：视频模型能力（选模型阶段差异说明）
+const vmCaps = useVideoModelCaps()
+
+// 模板渲染 helper（vue-tsc 严格模式：避免模板箭头函数隐式 any）
+function vmDurationsLabel(ds: unknown[]): string {
+  return (Array.isArray(ds) ? ds : []).map((x) => String(x) + 's').join(' / ')
+}
+function vmPixelLabel(opts: { value: string }[]): string {
+  return (Array.isArray(opts) ? opts : []).map((o) => o.value).join(' / ')
+}
+function vmRatioListText(item: { model: string; caps: Record<string, any> }): string {
+  const res = item.caps?.resolution || {}
+  const ratios = Array.isArray(res.ratios) ? res.ratios : []
+  return ratios.map((r: string) => vmCaps.ratioWHText(r, item.model)).join(' / ')
+}
 
 // 折叠状态（4 个配置面板）
 const collapsed = reactive<Record<string, boolean>>({
@@ -252,9 +269,77 @@ initCollapse()
           <label class="block text-xs text-muted mb-1">{{ t('modelImageLabel') }}</label>
           <select v-model="appState.models.image" disabled class="flex-1 glass-input rounded-lg px-3 py-2.5 text-sm text-ink opacity-50 cursor-not-allowed"></select>
         </div>
+        <!-- v6.2：开放视频模型选择 + 三模型差异说明 -->
         <div>
-          <label class="block text-xs text-muted mb-1">{{ t('modelVideoLabel') }}</label>
-          <select v-model="appState.models.video" disabled class="flex-1 glass-input rounded-lg px-3 py-2.5 text-sm text-ink opacity-50 cursor-not-allowed"></select>
+          <label class="block text-xs text-muted mb-1">{{ t('modelVideoLabel') }} (v6.2)</label>
+          <select v-model="appState.models.video" class="flex-1 glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
+            <option v-for="m in appState.modelListCache.video" :key="m" :value="m">{{ modelDisplayLabel(m) }}</option>
+          </select>
+          <p v-if="vmCaps.isPaidTag(appState.models.video)" class="text-xs text-amber-400 mt-1.5">{{ t('modelPaidHint') }}</p>
+          <p v-else-if="vmCaps.priceText(appState.models.video)" class="text-xs text-green-400 mt-1.5">{{ vmCaps.priceText(appState.models.video) }}</p>
+
+          <!-- 三模型差异对比（选模型阶段详细说明） -->
+          <div v-if="vmCaps.allCapabilities().length > 0" class="mt-3 rounded-lg bg-paper-3/60 p-3">
+            <p class="text-xs font-medium text-ink-2 mb-2">{{ t('vmDiffTitle') }}</p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-[11px] leading-relaxed">
+                <thead>
+                  <tr class="text-muted">
+                    <th class="text-left font-normal pr-3 py-0.5">{{ t('vmColCapability') }}</th>
+                    <th v-for="item in vmCaps.allCapabilities()" :key="item.model" class="text-left font-normal px-2 py-0.5 whitespace-nowrap">
+                      <span :class="item.model === appState.models.video ? 'text-accent' : ''">{{ item.caps.label }}</span>
+                      <span v-if="item.caps.price === 'paid'" class="text-amber-400"> {{ t('vmTagPaid') }}</span>
+                      <span v-else-if="item.caps.price === 'free'" class="text-green-400"> {{ t('vmTagFree') }}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="text-ink-2">
+                  <tr>
+                    <td class="text-muted pr-3 py-0.5">{{ t('vmColPrice') }}</td>
+                    <td v-for="item in vmCaps.allCapabilities()" :key="'p' + item.model" class="px-2 py-0.5" :class="item.caps.price === 'paid' ? 'text-amber-400' : 'text-green-400'">
+                      {{ vmCaps.priceText(item.model) }}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="text-muted pr-3 py-0.5">{{ t('vmColMode') }}</td>
+                    <td v-for="item in vmCaps.allCapabilities()" :key="'m' + item.model" class="px-2 py-0.5">
+                      {{ vmCaps.modeOptions(item.model).map((x) => x.label).join(' · ') }}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="text-muted pr-3 py-0.5">{{ t('vmColDuration') }}</td>
+                    <td v-for="item in vmCaps.allCapabilities()" :key="'d' + item.model" class="px-2 py-0.5">
+                      {{ vmDurationsLabel(item.caps.durations) }}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="text-muted pr-3 py-0.5">{{ t('vmColResolution') }}</td>
+                    <td v-for="item in vmCaps.allCapabilities()" :key="'r' + item.model" class="px-2 py-0.5">
+                      <template v-if="item.caps.resolution && item.caps.resolution.type === 'pixels'">
+                        {{ vmPixelLabel(item.caps.resolution.options) }}
+                      </template>
+                      <template v-else-if="item.caps.resolution">
+                        {{ vmRatioListText(item) }}<span v-if="item.caps.resolution.sizes.length > 1">（{{ item.caps.resolution.sizes.join(' / ') }}）</span>
+                      </template>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="text-muted pr-3 py-0.5">{{ t('vmColNegative') }}</td>
+                    <td v-for="item in vmCaps.allCapabilities()" :key="'n' + item.model" class="px-2 py-0.5">
+                      {{ item.caps.supports_negative ? t('vmYes') : t('vmNo') }}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="text-muted pr-3 py-0.5">{{ t('vmColRefVideo') }}</td>
+                    <td v-for="item in vmCaps.allCapabilities()" :key="'v' + item.model" class="px-2 py-0.5">
+                      {{ item.caps.supports_ref_video ? t('vmYes') : t('vmNo') }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-xs text-muted mt-2">{{ vmCaps.descOf(appState.models.video) }}</p>
+          </div>
         </div>
       </div>
       <div class="flex gap-3 mt-4">

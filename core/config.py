@@ -740,6 +740,110 @@ def set_selected_models(text: str = None, image: str = None, video: str = None) 
 
 
 # ═══════════════════════════════════════════════════
+# 视频模型能力元数据（v6.2：选模型阶段差异说明 + 表单选项归拢）
+# ═══════════════════════════════════════════════════
+
+# 2.5 系列模型 ID（新参数协议：mode/seconds/size/aspect_ratio，与 v2.0 不兼容）
+VIDEO_MODEL_25_PREFIX = "agnes-video-2.5"
+
+
+def is_v25_video_model(model: str) -> bool:
+    """判断是否为 2.5 系列视频模型（新参数协议）。"""
+    return bool(model) and model.startswith(VIDEO_MODEL_25_PREFIX)
+
+
+# 支持的画幅比例（2.5 系列 aspect_ratio 枚举）
+VIDEO_ASPECT_RATIOS = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+
+# 2.5 系列时长档位（seconds 字符串 "4"–"12"）
+VIDEO_25_DURATIONS = [4, 5, 6, 8, 10, 12]
+
+# 视频模型能力元数据：供前端「选模型阶段」展示差异 + 按模型归拢表单选项
+VIDEO_MODEL_CAPABILITIES = {
+    DEFAULT_VIDEO_MODEL: {  # agnes-video-v2.0（免费旧版）
+        "label": "Video 2.0",
+        "price": "free",
+        "price_text": {"zh": "免费", "en": "Free"},
+        "modes": [
+            {"id": "t2v", "label": {"zh": "文生视频", "en": "Text to video"}},
+            {"id": "i2v", "label": {"zh": "图生视频（1 张参考图）", "en": "Image to video (1 ref)"}},
+            {"id": "keyframes", "label": {"zh": "关键帧动画（首尾帧）", "en": "Keyframes (first+last)"}},
+        ],
+        "durations": [5, 10, 15, 18, 20],
+        "resolution": {
+            "type": "pixels",
+            "options": [
+                {"value": "768x1152", "label": {"zh": "竖屏 768x1152", "en": "Portrait 768x1152"}},
+                {"value": "1152x768", "label": {"zh": "横屏 1152x768", "en": "Landscape 1152x768"}},
+                {"value": "1024x1024", "label": {"zh": "方形 1024x1024", "en": "Square 1024x1024"}},
+            ],
+        },
+        "supports_negative": True,
+        "max_ref_images": None,  # 不限
+        "supports_ref_video": False,
+        "desc": {
+            "zh": "免费旧版。支持任意像素分辨率、最长约 17 秒、多参考图关键帧；有负面提示词。",
+            "en": "Free legacy model. Arbitrary pixel resolution, up to ~17s, multi-image keyframes; supports negative prompt.",
+        },
+    },
+    "agnes-video-2.5": {  # 付费模型
+        "label": "Video 2.5",
+        "price": "paid",
+        "price_text": {
+            "zh": "付费：720P $0.025/s · 960P $0.04/s · 2K $0.055/s；图片前 5 张免费",
+            "en": "Paid: 720P $0.025/s · 960P $0.04/s · 2K $0.055/s; first 5 images free",
+        },
+        "modes": [
+            {"id": "text", "label": {"zh": "文生视频", "en": "Text to video"}},
+            {"id": "keyframe", "label": {"zh": "首尾帧（自动降级图片参考）", "en": "First/last frame (auto fallback)"}},
+            {"id": "reference", "label": {"zh": "图片/音频参考", "en": "Image/audio reference"}},
+        ],
+        "durations": VIDEO_25_DURATIONS,
+        "resolution": {
+            "type": "ratio_size",
+            "ratios": VIDEO_ASPECT_RATIOS,
+            "sizes": ["720P", "960P", "2K"],
+        },
+        "supports_negative": False,
+        "max_ref_images": 5,  # 第 6 张起 $0.005/张
+        "supports_ref_video": True,
+        "desc": {
+            "zh": "新一代付费模型。最高 2K 分辨率、4–12 秒、支持参考视频；不支持负面提示词。",
+            "en": "New paid model. Up to 2K, 4–12s, supports reference videos; no negative prompt.",
+        },
+    },
+    "agnes-video-2.5-flash": {  # 免费新版（限时免费）
+        "label": "Video 2.5 Flash",
+        "price": "free",
+        "price_text": {"zh": "免费（限时）", "en": "Free (limited time)"},
+        "modes": [
+            {"id": "text", "label": {"zh": "文生视频", "en": "Text to video"}},
+            {"id": "keyframe", "label": {"zh": "首尾帧（自动降级图片参考）", "en": "First/last frame (auto fallback)"}},
+            {"id": "reference", "label": {"zh": "图片参考（≤5 张）", "en": "Image reference (≤5)"}},
+        ],
+        "durations": VIDEO_25_DURATIONS,
+        "resolution": {
+            "type": "ratio_size",
+            "ratios": VIDEO_ASPECT_RATIOS,
+            "sizes": ["720P"],  # 固定 720P
+        },
+        "supports_negative": False,
+        "max_ref_images": 5,
+        "supports_ref_video": False,
+        "desc": {
+            "zh": "免费新版（限时免费）。固定 720P、4–12 秒、图片参考最多 5 张；不支持负面提示词与参考视频。",
+            "en": "Free new model (limited time). Fixed 720P, 4–12s, up to 5 ref images; no negative prompt or ref video.",
+        },
+    },
+}
+
+
+def get_video_model_capabilities() -> dict:
+    """返回全部视频模型能力元数据（含未知模型的兜底默认）。"""
+    return dict(VIDEO_MODEL_CAPABILITIES)
+
+
+# ═══════════════════════════════════════════════════
 # Agnes API 域名配置（v6.0）
 # ═══════════════════════════════════════════════════
 

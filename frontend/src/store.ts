@@ -27,6 +27,8 @@ export const appState = reactive({
   agnesDomain: 'com' as string,
   models: { text: '', image: '', video: '' },
   modelListCache: { text: [] as string[], image: [] as string[], video: [] as string[] },
+  // v6.2：视频模型能力元数据（来自 /api/models video_capabilities）
+  videoCapabilities: {} as Record<string, any>,
   // 音色目录
   voiceCatalog: null as VoiceCatalog | null,
   voiceIndex: {} as Record<string, any>,

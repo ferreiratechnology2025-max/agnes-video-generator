@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { t } from '@/i18n'
 import { appState } from '@/store'
 import { useGa } from '@/composables/useGa'
 import { useNavigation } from '@/composables/useNavigation'
 import { useToast } from '@/composables/useToast'
+import { useVideoModelCaps, MODE_V25_TO_API } from '@/composables/useVideoModelCaps'
+import { useConfig } from '@/composables/useConfig'
 import * as api from '@/api'
 import WatermarkToggle from '@/components/shared/WatermarkToggle.vue'
 
 const { trackEvent } = useGa()
 const { goProgress } = useNavigation()
 const { showToast } = useToast()
+const { saveModels } = useConfig()
+
+// v6.2：视频模型能力（动态选项 + 差异说明）
+const vmCaps = useVideoModelCaps()
 
 // Sub-mode: video / image
 const subMode = ref<'video' | 'image'>('video')
@@ -20,7 +26,9 @@ const video = reactive({
   prompt: '',
   mode: 't2v',
   duration: '5',
-  resolution: '768x1152',
+  resolution: '768x1152', // v2.0：像素分辨率
+  ratio: '9:16',          // 2.5 系列：画幅比例（默认竖屏，对齐原 768x1152）
+  size: '720P',           // 2.5 系列：清晰度档位
   seed: '',
   negative: '',
   system: '',
@@ -44,6 +52,48 @@ const image = reactive({
 
 const advancedCollapsed = reactive({ video: true, image: true })
 const submitting = ref(false)
+
+// ── 按所选视频模型动态派生选项 ──
+const currentVideoModel = computed(() => appState.models.video || '')
+const isV25 = computed(() => vmCaps.isV25Model(currentVideoModel.value))
+const modeOptions = computed(() => vmCaps.modeOptions(currentVideoModel.value))
+const durationOptions = computed(() => vmCaps.durationOptions(currentVideoModel.value))
+const ratioOptions = computed(() => vmCaps.ratioOptions(currentVideoModel.value))
+const sizeOptions = computed(() => vmCaps.sizeOptions(currentVideoModel.value))
+const pixelOptions = computed(() => vmCaps.pixelOptions(currentVideoModel.value))
+
+// 参考图/尾帧显隐（按模型 + 模式语义统一）
+const needsRefImage = computed(() => {
+  const m = video.mode
+  return isV25.value ? m === 'reference' || m === 'keyframe' : m !== 't2v'
+})
+const needsEndFrame = computed(() => {
+  const m = video.mode
+  return isV25.value ? m === 'keyframe' : m === 'keyframes'
+})
+
+// 模型切换 → 修正表单默认值（选项集变化时避免非法值）
+watch(currentVideoModel, (model, old) => {
+  if (model === old) return
+  const ms = modeOptions.value
+  if (ms.length && !ms.some((x) => x.id === video.mode)) {
+    video.mode = ms[0].id
+  }
+  const ds = durationOptions.value
+  const cur = Number(video.duration)
+  if (ds.length && !ds.includes(cur)) {
+    video.duration = String(ds[0])
+  }
+  if (isV25.value) {
+    // 2.5 系列：比例与 size 对齐能力
+    if (ratioOptions.value.length && !ratioOptions.value.includes(video.ratio)) {
+      video.ratio = '9:16'
+    }
+    if (sizeOptions.value.length && !sizeOptions.value.includes(video.size)) {
+      video.size = sizeOptions.value[0]
+    }
+  }
+})
 
 function toggleCollapse(key: 'video' | 'image') {
   advancedCollapsed[key] = !advancedCollapsed[key]
@@ -71,6 +121,15 @@ function parseResolution(val: string) {
   return { width: w, height: h }
 }
 
+// 模型选择即保存（与 ConfigPanel 联动同一全局状态）
+async function onVideoModelChange(e: Event) {
+  const model = (e.target as HTMLSelectElement).value
+  if (!model) return
+  appState.models.video = model
+  trackEvent('config_action', { action: 'select_video_model', video_model: model })
+  await saveModels()
+}
+
 async function submitSimple() {
   const prompt = video.prompt.trim()
   if (!prompt) {
@@ -80,13 +139,23 @@ async function submitSimple() {
   submitting.value = true
   const form = new FormData()
   form.append('prompt', prompt)
-  form.append('mode', video.mode)
+  // 2.5 系列模式映射：text→t2v / reference→i2v / keyframe→keyframes
+  form.append('mode', isV25.value ? MODE_V25_TO_API[video.mode] || 't2v' : video.mode)
   form.append('duration', video.duration)
-  const res = parseResolution(video.resolution)
-  form.append('video_width', String(res.width))
-  form.append('video_height', String(res.height))
+  if (isV25.value) {
+    // 2.5 系列：比例 → 720P 基准像素 + 清晰度档位
+    const [w, h] = vmCaps.ratioToWH(video.ratio, currentVideoModel.value)
+    form.append('video_width', String(w))
+    form.append('video_height', String(h))
+    form.append('video_size', video.size)
+  } else {
+    const res = parseResolution(video.resolution)
+    form.append('video_width', String(res.width))
+    form.append('video_height', String(res.height))
+  }
   if (video.seed) form.append('seed', video.seed)
-  if (video.negative) form.append('negative_prompt', video.negative)
+  // 2.5 系列不支持负面提示词，不提交
+  if (!isV25.value && video.negative) form.append('negative_prompt', video.negative)
   if (video.system.trim()) form.append('system_prompt', video.system.trim())
   if (video.refImage) form.append('reference_image', video.refImage)
   if (video.endImage) form.append('end_frame_image', video.endImage)
@@ -98,7 +167,8 @@ async function submitSimple() {
       task_type: 'simple',
       mode: video.mode,
       duration: video.duration,
-      resolution: video.resolution,
+      resolution: isV25.value ? video.ratio + '/' + video.size : video.resolution,
+      video_model: currentVideoModel.value,
     })
     appState.currentTaskType = 'simple'
     appState.currentDirName = d.dir_name
@@ -160,6 +230,33 @@ async function submitImage() {
       <div class="glass-card rounded-2xl p-6 mb-4">
         <h2 class="text-lg font-semibold text-accent mb-4">{{ t('simpleSettings') }}</h2>
 
+        <!-- v6.2：视频模型选择（选模型阶段差异说明） -->
+        <div class="mb-4 rounded-xl bg-paper-3/50 p-3">
+          <label class="block text-sm text-muted mb-1.5">{{ t('vmModelSelect') }}</label>
+          <select :value="appState.models.video" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink" @change="onVideoModelChange">
+            <option v-for="m in appState.modelListCache.video" :key="m" :value="m">{{ m }}</option>
+          </select>
+          <!-- 当前模型能力说明 -->
+          <div class="mt-2.5 space-y-1 text-xs">
+            <p class="text-sm text-ink-2 font-medium">{{ vmCaps.capsOf(currentVideoModel).label || currentVideoModel }}</p>
+            <p v-if="vmCaps.priceText(currentVideoModel)" class="text-green-400">{{ vmCaps.priceText(currentVideoModel) }}</p>
+            <p class="text-muted">{{ vmCaps.descOf(currentVideoModel) }}</p>
+            <p v-if="isV25" class="text-muted">{{ t('vm720pHint') }}</p>
+            <div class="flex flex-wrap gap-x-4 gap-y-0.5 pt-1">
+              <span class="text-muted">{{ t('vmModelModesLabel') }}: <span class="text-ink-2">{{ vmCaps.modeOptions(currentVideoModel).map((x) => x.label).join(' · ') }}</span></span>
+              <span class="text-muted">{{ t('vmModelDurationsLabel') }}: <span class="text-ink-2">{{ vmCaps.durationOptions(currentVideoModel).map((x) => x + 's').join(' / ') }}</span></span>
+              <span class="text-muted">{{ t('vmModelResLabel') }}: <span class="text-ink-2">
+                <template v-if="isV25">{{ vmCaps.ratioOptions(currentVideoModel).map((r) => vmCaps.ratioWHText(r, currentVideoModel)).join(' / ') }}<template v-if="vmCaps.sizeOptions(currentVideoModel).length > 1">（{{ vmCaps.sizeOptions(currentVideoModel).join(' / ') }}）</template></template>
+                <template v-else>{{ vmCaps.pixelOptions(currentVideoModel).map((x) => x.value).join(' / ') }}</template>
+              </span></span>
+              <span class="text-muted">{{ t('vmModelNegativeLabel') }}: <span class="text-ink-2">{{ vmCaps.supportsNegative(currentVideoModel) ? t('vmYes') : t('vmNo') }}</span></span>
+              <span v-if="vmCaps.maxRefImages(currentVideoModel)" class="text-muted">{{ t('vmModelRefImagesLabel') }}: <span class="text-ink-2">≤ {{ vmCaps.maxRefImages(currentVideoModel) }}</span></span>
+              <span class="text-muted">{{ t('vmModelRefVideoLabel') }}: <span class="text-ink-2">{{ vmCaps.supportsRefVideo(currentVideoModel) ? t('vmYes') : t('vmNo') }}</span></span>
+            </div>
+            <p v-if="!vmCaps.supportsNegative(currentVideoModel)" class="text-amber-400 pt-0.5">{{ t('vmModelNegativeUnsupported') }}</p>
+          </div>
+        </div>
+
         <div class="mb-4">
           <label class="block text-sm text-muted mb-1.5">{{ t('promptLabel') }} (prompt) <span class="text-red-400">*</span></label>
           <textarea v-model="video.prompt" rows="3" :placeholder="t('promptPlaceholder')" class="w-full glass-input rounded-lg px-4 py-2.5 text-sm resize-y text-ink placeholder-muted"></textarea>
@@ -169,33 +266,40 @@ async function submitImage() {
           <div>
             <label class="block text-sm text-muted mb-1.5">{{ t('genMode') }}</label>
             <select v-model="video.mode" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
-              <option value="t2v">{{ t('modeT2v') }}</option>
-              <option value="i2v">{{ t('modeI2v') }}</option>
-              <option value="keyframes">{{ t('modeKeyframesSimple') }}</option>
+              <option v-for="opt in modeOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
             </select>
           </div>
           <div>
             <label class="block text-sm text-muted mb-1.5">{{ t('duration') }}</label>
             <select v-model="video.duration" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
-              <option value="5">5s</option>
-              <option value="10">10s</option>
-              <option value="15">15s</option>
-              <option value="18">18s</option>
-              <option value="20">20s</option>
+              <option v-for="d in durationOptions" :key="d" :value="String(d)">{{ d }}s</option>
             </select>
           </div>
-          <div>
+          <!-- 分辨率：v2.0 像素档位；2.5 系列 比例 + 清晰度 -->
+          <div v-if="!isV25">
             <label class="block text-sm text-muted mb-1.5">{{ t('resolution') }}</label>
             <select v-model="video.resolution" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
-              <option value="768x1152">{{ t('resPortrait') }}</option>
-              <option value="1152x768">{{ t('resLandscape') }}</option>
-              <option value="1024x1024">{{ t('resSquare') }}</option>
+              <option v-for="opt in pixelOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </div>
+          <template v-else>
+            <div>
+              <label class="block text-sm text-muted mb-1.5">{{ t('vmRatioLabel') }} <span class="text-muted/70">({{ t('vmRatioHint') }})</span></label>
+              <select v-model="video.ratio" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
+                <option v-for="r in ratioOptions" :key="r" :value="r">{{ vmCaps.ratioWHText(r, currentVideoModel) }}</option>
+              </select>
+            </div>
+            <div v-if="sizeOptions.length > 1">
+              <label class="block text-sm text-muted mb-1.5">{{ t('vmSizeLabel') }}</label>
+              <select v-model="video.size" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink">
+                <option v-for="s in sizeOptions" :key="s" :value="s">{{ s }}</option>
+              </select>
+            </div>
+          </template>
         </div>
 
         <!-- Reference Image -->
-        <div v-if="video.mode !== 't2v'" class="mb-4">
+        <div v-if="needsRefImage" class="mb-4">
           <label class="block text-sm text-muted mb-1.5">{{ t('refImageSimple') }}</label>
           <div class="flex items-center gap-4">
             <label class="cursor-pointer px-4 py-2.5 glass-input rounded-lg text-sm transition inline-block hover:border-blue-500/30">
@@ -204,10 +308,11 @@ async function submitImage() {
             </label>
             <span class="text-sm text-muted">{{ video.refName || t('notSelected') }}</span>
           </div>
+          <p v-if="vmCaps.maxRefImages(currentVideoModel)" class="text-xs text-muted mt-1">{{ t('vmRefImagesHint') }} ≤ {{ vmCaps.maxRefImages(currentVideoModel) }}</p>
         </div>
 
         <!-- End Frame -->
-        <div v-if="video.mode === 'keyframes'" class="mb-4">
+        <div v-if="needsEndFrame" class="mb-4">
           <label class="block text-sm text-muted mb-1.5">{{ t('endFrameImage') }}</label>
           <div class="flex items-center gap-4">
             <label class="cursor-pointer px-4 py-2.5 glass-input rounded-lg text-sm transition inline-block hover:border-blue-500/30">
@@ -230,9 +335,13 @@ async function submitImage() {
                 <label class="block text-sm text-muted mb-1.5">Seed ({{ t('optional') }})</label>
                 <input v-model="video.seed" type="number" :placeholder="t('seedPlaceholder')" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink" />
               </div>
-              <div>
+              <div v-if="vmCaps.supportsNegative(currentVideoModel)">
                 <label class="block text-sm text-muted mb-1.5">Negative Prompt ({{ t('optional') }})</label>
                 <input v-model="video.negative" :placeholder="t('negativePlaceholder')" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink" />
+              </div>
+              <div v-else class="md:col-span-2">
+                <label class="block text-sm text-muted mb-1.5">Negative Prompt</label>
+                <input disabled :placeholder="t('vmNegativeDisabledPlaceholder')" class="w-full glass-input rounded-lg px-3 py-2.5 text-sm text-ink opacity-50 cursor-not-allowed" />
               </div>
             </div>
             <div class="mt-4">

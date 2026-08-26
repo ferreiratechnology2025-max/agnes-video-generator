@@ -11,7 +11,7 @@
 > - 流水线产物逻辑：`docs/dev/pipeline_products.md`（权威参考）
 > - 大版本回归：`docs/dev/regression_test_plan.md`（含场景矩阵、命令、报告）
 > - 测试覆盖 & CI：`docs/dev/test_coverage_and_ci.md`
-> - 优化路线图：`docs/plans/v5.0/optimization_roadmap.md`（可落地优化点）
+> - 优化路线图：`docs/plans/v6.0/optimization_roadmap.md`（合并版，现行唯一路线图，计划 v6 版本线内完成；已取代并废弃 `docs/plans/v5.0/optimization_roadmap.md`）
 > - 待调研存档：`docs/plans/optimization-research/README.md`
 > - 发版规范：`docs/dev/release_process.md`（版本号规则 + 新增内容规范 + 发布流程）
 
@@ -136,7 +136,7 @@ agnes-video-generator/
 │   │   ├── agnes_image.py            # 图片生成 API（t2i + i2i + ref image）
 │   │   ├── agnes_video.py            # 视频生成 API（t2v/i2v/ti2vid/keyframes + 轮询 + 重试）
 │   │   ├── agnes_models.py           # 模型列表拉取（text/image/video 分组，含缓存回退）
-│   │   ├── rate_limiter.py           # 令牌桶限速器（全局限速，单一共享桶）
+│   │   ├── rate_limiter.py           # 令牌桶限速器（共享桶 + 视频提交独立桶，配额随 Key 数缩放）
 │   │   └── error_collector.py        # 模型接口报错收集（prompt/错误类型/详情 → error_logs/）
 │   ├── audio/
 │   │   ├── tts.py                    # EdgeTTSEngine（旁白+词级时间戳）+ SilentTTSEngine
@@ -195,7 +195,7 @@ agnes-video-generator/
 | **"架构评审"** | 评审架构设计/实现 | 部分工作流 |
 | **"部署项目" / "初始化环境"** | 按 `docs/public/getting-started.md` 部署 | 全新环境部署 |
 | **"验证项目" / "跑一下检查"** | 按「〇 部署与验证」执行 | 部署后验证 |
-| **"执行优化批次"** | 按 `docs/plans/v5.0/optimization_roadmap.md` 执行对应批次 | 每完成一项按文档验收标准自验 + 更新 `docs/dev/regression_test_plan.md` 回归条目 |
+| **"执行优化批次"** | 按 `docs/plans/v6.0/optimization_roadmap.md`（合并版）执行对应批次 | 每完成一项按文档验收标准自验 + 更新 `docs/dev/regression_test_plan.md` 回归条目 |
 | **"待调研优化点" / "优化调研"** | 按 `docs/plans/optimization-research/README.md` 索引与调研方法评估 | 价值存疑的新点子先存档，转入可执行需移回 `optimization_roadmap.md` |
 | **"发版" / "发布" / "release"** | 按 `docs/dev/release_process.md` 执行（确认版本类型 → 升位 → 写 release notes → 打 tag） | 需用户明确版本类型或版本号 |
 
@@ -252,16 +252,16 @@ agnes-video-generator/
 
 | 场景 | 策略 |
 |------|------|
-| 全局限速 | `core/api/rate_limiter.py` 单一共享令牌桶：`get_rate_limiter()`，默认 `AGNES_RATE_LIMIT=20`，`_SAFETY_FACTOR=0.8` → 实际 **16 次/分钟**。**所有** Agnes 调用（Chat / Image / Video 提交与轮询）共用此桶，无独立视频提交桶 |
+| 全局限速 | `core/api/rate_limiter.py` 双令牌桶：**共享桶** `get_rate_limiter()`（Chat / Image / 上传 / 轮询，速率 = 20 × Key 数 × 0.8 次/分钟，`AGNES_RATE_LIMIT` 可覆盖）+ **视频提交独立桶** `get_video_submit_limiter()`（1 × Key 数 次/分钟，`AGNES_VIDEO_RATE_LIMIT` 可覆盖）；配额随 `KeyRing` Key 数缩放，`set_api_keys()` 后经 `reset_rate_limiter()` 即时生效 |
 | LLM Chat | 重试 3 次，间隔 15s 递增；5xx 和 429 均重试 |
 | 图片生成 | 重试 4 次，间隔 20s 递增；5xx 和 429 均重试 |
-| 视频提交 | 重试 5 次，间隔 30s 递增；5xx、429、超时均重试（仍走共享桶） |
+| 视频提交 | 重试 5 次，间隔 30s 递增；5xx、429、超时均重试（走视频提交独立桶） |
 | 视频轮询 | 间隔 60s，每 10 次输出日志；连续 10 次失败放弃；整体超时 1800s |
 | 报错收集 | `error_collector.py` 记录失败调用的 prompt/错误类型/详情至工作目录 `error_logs/` |
 | PipelineShutdown | 所有流水线统一处理，落盘当前状态 |
 | TTS 失败 | 降级为静音 + 字幕 |
 
-> 多 API Key 轮询 / 分层限速（视频提交独立桶 1×Key/min + 共享桶 20×Key×0.8）为**规划方案（未实施）**，见 `docs/plans/v5.0/optimization_roadmap.md §1`。当前实现为单一共享桶。
+> 多 API Key 轮询（`core/api/key_manager.py` KeyRing）与分层限速已于 v5.0 落地：429 换 Key 立即重试，共享桶/视频提交桶配额均随 Key 数线性缩放。历史设计细节见 `docs/plans/v5.0/optimization_roadmap.md §1`（该路线图已废弃，仅作存档）。
 
 ### 6.3 向后兼容
 
@@ -302,7 +302,7 @@ final_duration = max(audio_duration + 1.0, original_video_duration)
 # padding ≤ 1 秒，不足时尾帧 freeze
 ```
 
-创意视频和稿件视频均采用"MoneyPrinterTurbo 方式"：先拼接所有视频片段，再整体叠加一条合并音频 + 一套字幕，避免逐段叠加导致的 padding 累积误差。TTS 输出自动放大 2.5 倍音量以补偿 edge_tts 默认低音量。
+创意视频和稿件视频均采用"MoneyPrinterTurbo 方式"：先拼接所有视频片段，再整体叠加一条合并音频 + 一套字幕，避免逐段叠加导致的 padding 累积误差。TTS 输出自动放大 1.5 倍音量以补偿 edge_tts 默认低音量（`audio_overlay.py` 的 `_AUDIO_VOLUME_FACTOR = 1.5`）。
 
 ### 6.7 稿件拆段算法
 
@@ -460,4 +460,4 @@ python scripts/scene_runner.py --endpoints         # 端点验证
 
 ---
 
-*文档版本：v7.3 | 更新日期：2026-08-14 | 阶段：🟢 维护模式（六种任务类型 + artifacts/水印/多工作区/13 语言音色）*
+*文档版本：v7.4 | 更新日期：2026-08-26 | 阶段：🟢 维护模式（六种任务类型 + artifacts/水印/多工作区/13 语言音色）*
