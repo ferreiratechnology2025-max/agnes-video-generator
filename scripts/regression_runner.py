@@ -39,6 +39,11 @@ from typing import Any, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 
+from core.config import get_selected_models, is_v25_video_model
+
+# v6.2.1: 回归默认视频模型（2.5-flash 比例档位输出），可按需修改
+REGRESSION_VIDEO_MODEL = "agnes-video-2.5-flash"
+
 # ═══════════════════════════════════════════════════
 # 配置常量
 # ═══════════════════════════════════════════════════
@@ -890,6 +895,28 @@ async def wait_for_server(retries: int = HEALTH_CHECK_RETRIES) -> bool:
     return False
 
 
+def ensure_regression_video_model() -> None:
+    """v6.2.1: 回归流程默认视频模型 = 2.5-flash（比例档位输出）。
+
+    在服务就绪后调用，将全局视频模型切到 REGRESSION_VIDEO_MODEL，
+    使 8 个场景统一走 2.5 系列参数协议；可用环境变量覆盖：
+    AGNES_REGRESSION_VIDEO_MODEL
+    """
+    model = os.environ.get("AGNES_REGRESSION_VIDEO_MODEL", REGRESSION_VIDEO_MODEL)
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/api/config/models",
+            data={"text": "agnes-2.0-flash", "video": model},
+            timeout=15,
+        )
+        if r.ok:
+            logger.info(f"[Regression] 回归视频模型已设为 {model}")
+        else:
+            logger.warning(f"[Regression] 设置回归视频模型失败: HTTP {r.status_code}")
+    except Exception as e:
+        logger.warning(f"[Regression] 设置回归视频模型异常: {e}")
+
+
 async def ensure_server(auto_start: bool = False) -> bool:
     if await asyncio.to_thread(check_server_health):
         return True
@@ -1171,11 +1198,21 @@ def _validate_sync(dir_name: str, scenario: ScenarioConfig) -> dict:
             exp_h = sd.get("video_height", scenario.params.get("video_height", 1152))
             checks["F3_width"] = clip.w
             checks["F3_height"] = clip.h
-            # Agnes API may adjust dimensions (e.g. rounding to 64-multiples),
-            # so allow ±15% tolerance on each axis
-            w_ok = abs(clip.w - exp_w) / max(exp_w, 1) <= 0.15
-            h_ok = abs(clip.h - exp_h) / max(exp_h, 1) <= 0.15
-            checks["F3_resolution_matches"] = w_ok and h_ok
+            # v6.2.1: 2.5 系列模型按比例档位输出（720P 基准、短边对齐），
+            # 绝对像素与输入不同（如 768x1152 → 704x960），改用宽高比校验（±15%）。
+            video_model = get_selected_models().get("video", "")
+            if is_v25_video_model(video_model):
+                exp_ratio = exp_w / max(exp_h, 1)
+                act_ratio = clip.w / max(clip.h, 1)
+                checks["F3_resolution_matches"] = (
+                    abs(act_ratio - exp_ratio) / max(exp_ratio, 1e-6) <= 0.15
+                )
+            else:
+                # Agnes API may adjust dimensions (e.g. rounding to 64-multiples),
+                # so allow ±15% tolerance on each axis
+                w_ok = abs(clip.w - exp_w) / max(exp_w, 1) <= 0.15
+                h_ok = abs(clip.h - exp_h) / max(exp_h, 1) <= 0.15
+                checks["F3_resolution_matches"] = w_ok and h_ok
             checks["F4_has_audio_stream"] = clip.audio is not None
             # F7: 时长区间校验（与 F2 duration>0 不同，需要与 task_state 期望值比对）
             expected_dur = _compute_expected_duration(sd, scenario)
@@ -1772,6 +1809,9 @@ async def main(resume: bool = False, auto_start: bool = False,
     if not await ensure_server(auto_start):
         logger.error("服务不可用，退出")
         return 1
+
+    # v6.2.1: 回归默认视频模型 = 2.5-flash（比例档位输出）
+    await asyncio.to_thread(ensure_regression_video_model)
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     report = ReportManager(REPORT_PATH)

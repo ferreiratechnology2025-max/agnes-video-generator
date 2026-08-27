@@ -77,7 +77,7 @@
 |---|------|---------|---------|---------|---------|
 | F1 | 最终视频 | `{working_dir}/{task_dir}/final_video.mp4` | 文件存在、非空 | 自动 | `os.path.exists` 且 `os.path.getsize > 0` |
 | F2 | 视频时长 | — | 时长合理（> 0） | 自动 | `ffprobe` 或 `moviepy` 读取 duration |
-| F3 | 视频分辨率 | — | 匹配请求参数 | 自动 | `moviepy` 读取宽高，±15% 容差 |
+| F3 | 视频分辨率 | — | 匹配请求参数 | 自动 | `moviepy` 读取宽高；v2.0 按绝对像素 ±15% 容差；**2.5 系列按宽高比 ±15% 校验**（720P 比例档位输出，如 768x1152 → 704x960，见 4.2） |
 | F4 | 音频轨道 + 语音内容 | — | 视频包含音频轨道 + 语音内容 | 自动 | `moviepy` 检测 audio stream + `whisper` ASR |
 | F5 | 字幕可见性 | — | 视频画面中字幕正确显示 | 手动 | 播放查看 |
 | F6 | 字幕文本匹配 | — | 字幕文本与原文一致 | 自动 | ASR 转录与原文模糊匹配（> 30%） |
@@ -149,6 +149,7 @@
 3. **失败记录具体原因**：含 HTTP 状态码、错误信息、超时时长。
 4. **无明显原因须续传**：可恢复的失败通过 `--resume` 续传。
 5. **测试专用空间隔离**：回归测试使用固定独立的工作目录，与用户日常任务完全隔离（见 4.0）。
+6. **默认视频模型 = `agnes-video-2.5-flash`（v6.2.1）**：`regression_runner.py` / `scene_runner.py` 提交任务前自动将全局视频模型设为 2.5-flash（比例档位输出），可用环境变量 `AGNES_REGRESSION_VIDEO_MODEL` 覆盖为其他模型（如 `agnes-video-v2.0`）；若切换 v2.0，F3 自动回到像素校验。
 
 ### 4.0 测试专用工作目录（回归空间）
 
@@ -181,6 +182,8 @@ bash start.sh
 ### 4.2 执行方式
 
 使用 `scripts/regression_runner.py` 自动完成全部场景并发执行。
+
+> **v6.2.1 起**：脚本在服务就绪后自动调用 `/api/config/models` 将视频模型设为默认 `agnes-video-2.5-flash`（`ensure_regression_video_model()`），无需手动切换；如需回归其他视频模型，设置 `AGNES_REGRESSION_VIDEO_MODEL` 环境变量即可。
 
 也可以使用 `scripts/scene_runner.py` 单独执行某个场景，避免主 agent 内大量轮询造成上下文爆炸：
 
