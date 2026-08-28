@@ -152,8 +152,8 @@ class AgnesImageAPI:
         max_rotations = len(ring) * max_retries
         while attempt < max_retries:
             try:
-                # 全局限速：在发起 HTTP 请求前获取令牌
-                await asyncio.to_thread(get_rate_limiter().acquire)
+                # 全局限速：在发起 HTTP 请求前获取令牌（2.3 异步原生）
+                await get_rate_limiter().acquire_async()
                 # 动态超时：第一次 120s，后续逐步增加（图像生成较慢，放宽读超时）
                 read_timeout = _READ_TIMEOUT_BASE_SECONDS * (attempt + 1)
                 resp = await asyncio.to_thread(

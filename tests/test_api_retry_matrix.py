@@ -34,10 +34,13 @@ class FakeResponse:
 
 
 class FakeLimiter:
-    """限速器桩：acquire 立即返回，避免真实 1 次/分钟的令牌桶 sleep 拖慢测试。"""
+    """限速器桩：acquire / acquire_async 立即返回，避免真实令牌桶 sleep 拖慢测试。"""
 
     def acquire(self):
         return True
+
+    async def acquire_async(self, stop_event=None):
+        return None
 
 
 class FakeRing:

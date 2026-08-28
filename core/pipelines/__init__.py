@@ -4,13 +4,24 @@ BasePipeline 抽象基类 + 四种流水线导出。
 """
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import os
 import subprocess
+import time
 from abc import ABC, abstractmethod
 from types import SimpleNamespace
 from typing import Callable, List, Optional
+
+# 2.4：进度写盘节流阈值（秒）——_emit 进度类字段高频更新时合并落盘
+_PROGRESS_SAVE_THROTTLE_SECONDS = 0.5
+
+# 2.3：编码专用线程池——ffmpeg/moviepy 重型编码（分钟级）与轻量请求隔离，
+# 避免占满默认线程池导致 API 请求/限速等待排队
+_ENCODING_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="encoding"
+)
 
 from core.compositor.watermark import add_watermark, detect_language
 from core.config import get_watermark_config
@@ -213,14 +224,20 @@ class BasePipeline(ABC):
             self._state.current_status = status
             self._state.current_progress = progress
             self._state.current_message = message
-            # 持久化（写盘开销 < 1ms，pipeline 步骤间隔通常 > 1s）
+            # 2.4：进度写盘节流——进度类字段高频更新时合并落盘（0.5s 阈值）。
+            # 关键状态（video_id / scenes / paragraphs 等）不经本路径，不受影响；
+            # 任务暂停/完成会走独立的强制 update_state 保证终态一致。
             try:
-                self.task_manager.update_state(
-                    current_step=step,
-                    current_status=status,
-                    current_progress=progress,
-                    current_message=message,
-                )
+                now = time.monotonic()
+                last = getattr(self, "_last_progress_save", 0.0)
+                if now - last >= _PROGRESS_SAVE_THROTTLE_SECONDS:
+                    self._last_progress_save = now
+                    self.task_manager.update_state(
+                        current_step=step,
+                        current_status=status,
+                        current_progress=progress,
+                        current_message=message,
+                    )
             except Exception as e:
                 logger.debug(f"[Pipeline] Failed to persist progress: {e}")
 
@@ -825,8 +842,10 @@ class BasePipeline(ABC):
             if lang == "auto":
                 lang = detect_language(self._get_watermark_language_text())
             wm_output = video_path + ".wm_tmp.mp4"
-            ok = await asyncio.to_thread(
-                add_watermark, video_path, wm_output, language=lang
+            # 2.3：编码走专用线程池（与轻量请求隔离，不占用默认 to_thread 池）
+            loop = asyncio.get_running_loop()
+            ok = await loop.run_in_executor(
+                _ENCODING_EXECUTOR, add_watermark, video_path, wm_output, language=lang
             )
             if ok:
                 os.replace(wm_output, video_path)
