@@ -84,7 +84,7 @@ scenes → references → videos → audio → subtitle → final
 - **Three ways to handle artifacts** at a paused checkpoint:
   - 🤖 **AI Modify**: type a request, the system rewrites the artifact (text via chat / image via i2i / video via ffmpeg command).
   - ✏️ **Edit yourself**: copy the artifact path, edit locally, then click "I've modified, continue".
-  - 🤝 **External Agent**: copy `cd <dir> && opencode` + prompt template, process, then confirm.
+  - 🤝 **External Agent**: copy `cd <dir> && traework` (or another local agent, e.g. opencode) + prompt template, process, then confirm.
 - **Change anything**: artifacts **and** task params (resolution / voice / duration / scene count) can be edited while paused. The system previews which artifacts will be deleted & re-run vs kept before you confirm (dependency graph).
 - Not supported: simple / simple-image types (read-only artifact list after completion).
 

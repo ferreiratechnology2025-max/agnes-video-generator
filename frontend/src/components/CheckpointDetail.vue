@@ -328,7 +328,7 @@ function artLabel(a: any): string {
     <!-- 通道 3 面板 -->
     <div v-else-if="activeCard === 'agent'" class="space-y-3">
       <p class="text-xs text-muted">{{ t('agentCommand') }}:</p>
-      <code class="block text-xs bg-black/40 text-green-300 px-3 py-2 rounded-lg mb-2 break-all">{{ 'cd ' + (checkpointData?.working_dir || '') + ' && opencode' }}</code>
+      <code class="block text-xs bg-black/40 text-green-300 px-3 py-2 rounded-lg mb-2 break-all whitespace-pre">{{ t('agentCommandLines').replace('{dir}', checkpointData?.working_dir || '') }}</code>
       <p class="text-xs text-muted">{{ t('agentPrompt') }}:</p>
       <textarea rows="3" class="w-full glass-input rounded-lg px-3 py-2 text-sm text-ink font-mono text-xs resize-y" :value="t('agentPromptTemplate').replace('{dir}', checkpointData?.working_dir || '')" readonly></textarea>
     </div>

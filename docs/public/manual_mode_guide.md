@@ -37,7 +37,7 @@ scenes(分镜) → references(参考图) → videos(视频片段) → audio(配�
 
 ## 三、外部 Agent 协作 Prompt 库
 
-> 以下示例面向支持"读取本地文件 + 执行命令"的本地免费 Agent（opencode / workbuddy / CodeBuddy CLI）。
+> 以下示例面向支持"读取本地文件 + 执行命令"的本地免费 Agent（TraeWork / opencode / workbuddy / CodeBuddy CLI）。
 > `<任务目录>` 在 Web 端已自动填充为真实路径，复制即用。
 
 ### 示例 1：优化分镜（scenes 检查点）

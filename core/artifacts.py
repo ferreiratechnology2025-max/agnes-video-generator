@@ -1082,7 +1082,7 @@ def write_manifest_md(state: BaseTaskState, task_dir: str) -> str:
         lines += [
             "## 协作提示",
             "",
-            "- 文本 / JSON / SRT 产物可直接用编辑器或外部 AI Agent（如 opencode、workbuddy）修改。",
+            "- 文本 / JSON / SRT 产物可直接用编辑器或外部 AI Agent（如 TraeWork、opencode、workbuddy）修改。",
             "- 图片 / 视频产物可用 ffmpeg、Python 等外部工具处理后覆盖同名文件。",
             "- 产物字段说明见 `docs/dev/artifact_standard.md`。",
             "",

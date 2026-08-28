@@ -17,7 +17,7 @@
 2. 开放文本格式（UTF-8 / JSON indent=2 / 标准 SRT）。
 3. 每个任务自动生成**产物清单**（`manifest.json`）与**目录说明**（`MANIFEST.md`）。
 4. 通过 API 暴露产物相对路径、字段说明（`schema_hint`）、预览 URL。
-5. 外部 Agent（opencode / workbuddy 等）或手动工具（ffmpeg / Python）可依据规范直接处理产物。
+5. 外部 Agent（TraeWork / opencode / workbuddy 等）或手动工具（ffmpeg / Python）可依据规范直接处理产物。
 
 ---
 
