@@ -105,16 +105,17 @@ async function buildReport(): Promise<string> {
     const d = await api.getTaskDiagnostics(props.taskId)
     const logs = d && d.error_logs
     if (Array.isArray(logs) && logs.length) {
+      const unk = t('fbRepUnknown')
       const lines = logs.map((log: any, i: number) => {
         const errMsg = (log.error_message || '').slice(0, 800)
         return (
-          `\n#### 模型调用错误 ${i + 1}\n` +
-          `- 时间: ${log.timestamp || '未知'}\n` +
-          `- 模型: ${log.model_type || '未知'}\n` +
-          `- 接口: ${log.api_method || '未知'}\n` +
-          `- 错误类型: ${log.error_type || '未知'}\n` +
-          (log.status_code ? `- 状态码: ${log.status_code}\n` : '') +
-          (errMsg ? `- 错误信息: ${errMsg}\n` : '')
+          `\n${t('fbRepErrHeading').replace('{n}', String(i + 1))}\n` +
+          `- ${t('fbRepErrTime')}: ${log.timestamp || unk}\n` +
+          `- ${t('fbRepErrModel')}: ${log.model_type || unk}\n` +
+          `- ${t('fbRepErrApi')}: ${log.api_method || unk}\n` +
+          `- ${t('fbRepErrType')}: ${log.error_type || unk}\n` +
+          (log.status_code ? `- ${t('fbRepErrStatusCode')}: ${log.status_code}\n` : '') +
+          (errMsg ? `- ${t('fbRepErrInfo')}: ${errMsg}\n` : '')
         )
       })
       merged = base + '\n' + lines.join('\n')

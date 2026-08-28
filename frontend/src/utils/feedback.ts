@@ -5,8 +5,10 @@
  * - 按任务持久化的重试计数（localStorage）
  * - 确定性故障预筛（保守关键词匹配）
  * - 诊断信息报告拼接（复制 / GitHub Issue 预填共用）
- * - GitHub Issue 链接构造（含编码长度截断与降级）
+ * GitHub Issue 链接构造（含编码长度截断与降级）
  */
+
+import { t } from '@/i18n'
 
 // ── 常量 ──
 
@@ -144,27 +146,28 @@ export interface DiagnosticInput {
  * 隐私约定：不含用户提示词原文，错误消息截断 2000 字符。
  */
 export function buildDiagnosticReport(d: DiagnosticInput): string {
+  const unk = t('fbRepUnknown')
   const lines: string[] = []
-  lines.push('## 诊断信息（Agnes Video Generator）')
-  lines.push(`- 应用版本: ${d.appVersion || '未知'}`)
-  lines.push(`- 任务 ID: ${d.taskId}`)
-  lines.push(`- 任务类型: ${d.taskType}`)
-  if (d.mode) lines.push(`- 生成模式: ${d.mode}`)
-  lines.push(`- 失败环节: ${d.failedStep || '未知'}`)
-  lines.push(`- 已重试次数: ${d.retryCount}`)
-  if (d.configs.length) lines.push(`- 关键配置: ${d.configs.join(' / ')}`)
-  lines.push(`- 环境: ${navigator.userAgent}`)
+  lines.push(t('fbRepTitle'))
+  lines.push(`- ${t('fbRepAppVersion')}: ${d.appVersion || unk}`)
+  lines.push(`- ${t('fbRepTaskId')}: ${d.taskId}`)
+  lines.push(`- ${t('fbRepTaskType')}: ${d.taskType}`)
+  if (d.mode) lines.push(`- ${t('fbRepMode')}: ${d.mode}`)
+  lines.push(`- ${t('fbRepFailedStep')}: ${d.failedStep || unk}`)
+  lines.push(`- ${t('fbRepRetryCount')}: ${d.retryCount}`)
+  if (d.configs.length) lines.push(`- ${t('fbRepConfigs')}: ${d.configs.join(' / ')}`)
+  lines.push(`- ${t('fbRepEnv')}: ${navigator.userAgent}`)
   lines.push('')
-  lines.push('### 错误信息')
+  lines.push(t('fbRepErrorTitle'))
   lines.push('```')
   lines.push((d.errorMessage || '').slice(0, ERROR_MESSAGE_MAX))
   lines.push('```')
   lines.push('')
-  lines.push('### 复现步骤')
-  lines.push('<!-- 请补充：操作过程与相关配置 -->')
+  lines.push(t('fbRepReproSteps'))
+  lines.push(t('fbRepReproHint'))
   lines.push('')
-  lines.push('### 期望行为')
-  lines.push('<!-- 请补充 -->')
+  lines.push(t('fbRepExpected'))
+  lines.push(t('fbRepExpectedHint'))
   return lines.join('\n')
 }
 
@@ -174,9 +177,8 @@ export function buildDiagnosticReport(d: DiagnosticInput): string {
  * 生成 Issue 标题。
  */
 export function buildIssueTitle(taskType: string, failedStep: string): string {
-  return failedStep
-    ? `[Bug] ${taskType} 任务在 ${failedStep} 环节失败`
-    : `[Bug] ${taskType} 任务生成失败`
+  const tpl = failedStep ? t('fbRepIssueTitleStep') : t('fbRepIssueTitleNoStep')
+  return tpl.replace('{taskType}', taskType).replace('{failedStep}', failedStep)
 }
 
 /**
@@ -190,7 +192,7 @@ export function buildIssueUrl(title: string, body: string): { url: string; trunc
   let truncated = false
   // 原始字符数超上限 → 逐步截断并标注省略（PRD FR6.2：4000 字符上限 + FR6.3 降级）
   if (b.length > ISSUE_BODY_MAX_RAW) {
-    b = b.slice(0, ISSUE_BODY_MAX_RAW) + '\n\n…（内容过长已省略，请粘贴完整的诊断信息）'
+    b = b.slice(0, ISSUE_BODY_MAX_RAW) + '\n\n' + t('fbRepTruncated')
     truncated = true
   }
   const url = `${GITHUB_REPO}/issues/new?labels=bug&title=${encodeURIComponent(title)}&body=${encodeURIComponent(b)}`
