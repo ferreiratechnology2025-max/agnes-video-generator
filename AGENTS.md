@@ -198,6 +198,7 @@ agnes-video-generator/
 | **"执行优化批次"** | 按 `docs/plans/v6.0/optimization_roadmap.md`（合并版）执行对应批次 | 每完成一项按文档验收标准自验 + 更新 `docs/dev/regression_test_plan.md` 回归条目 |
 | **"待调研优化点" / "优化调研"** | 按 `docs/plans/optimization-research/README.md` 索引与调研方法评估 | 价值存疑的新点子先存档，转入可执行需移回 `optimization_roadmap.md` |
 | **"发版" / "发布" / "release"** | 按 `docs/dev/release_process.md` 执行（确认版本类型 → 升位 → 写 release notes → 打 tag） | 需用户明确版本类型或版本号 |
+| **"处理Issue" / "看下新的issue" / "处理GitHub问题"** | 按 `docs/dev/issue_handling_process.md` 执行（查看新 Issue → 分析原因 → 与用户沟通 → 回复[标注 agent]或优化代码 → 周期整理 FAQ） | 回复用户须标注具体实施的 agent；周期性沉淀常见问题完善 `docs/public/faq.md` |
 
 ---
 
