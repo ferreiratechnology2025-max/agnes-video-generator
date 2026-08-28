@@ -94,6 +94,20 @@ To be honest, Agnes's video model isn't perfect yet. The generated frames are so
 | **Watermark** | No watermark | Built-in watermark | Built-in watermark | C2PA metadata | Built-in watermark |
 | **Usage Limit** | No limit (16 req/min rate limit) | Billed by compute | Billed by generation | Billed by generation | Billed by generation |
 
+## ⚙️ Configuration
+
+Everything is configured through environment variables — no config file is required. To start from a documented template:
+
+```bash
+cp .env.example .env    # then edit AGNES_API_KEY inside
+```
+
+[`.env.example`](.env.example) lists every supported variable with its default value: API key, multi-key rotation, rate limits, port, model overrides, and maintenance options.
+
+> **Have more than one API key?** Set `AGNES_API_KEY`, `AGNES_API_KEY_2`, `AGNES_API_KEY_3` … (numbering must be contiguous). Rate-limit quotas scale with your key count, a `429` automatically rotates to the next key, and the concurrency limit scales along with it.
+
+Full walkthrough: [Getting Started → Configure API Key](docs/public/getting-started.md).
+
 ## 📚 Documentation
 
 - **[Features](docs/public/features.md)** — Creation modes, the completely free AI model chain, AI narration & smart subtitles, flexible creative controls, production-grade reliability, and the multilingual Web UI.

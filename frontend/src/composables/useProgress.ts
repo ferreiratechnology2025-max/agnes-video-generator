@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { appState } from '@/store'
 import { getStepsForType, isStepDoneInState } from '@/steps'
 import * as api from '@/api'
-import { t } from '@/i18n'
+import { t, escapeHtml } from '@/i18n'
 import { useGa } from './useGa'
 import { useArtifacts } from './useArtifacts'
 import { useToast } from './useToast'
@@ -90,8 +90,10 @@ async function showProgress(taskId: string, dirName?: string | null): Promise<Ta
     }
   }
 
-  const dirInfo = dirName ? `<br><span class="text-muted text-xs">${t('dir')}: <span class="font-mono">${dirName}</span></span>` : ''
-  progressMessage.value = `<span class="text-accent animate-pulse">${t('taskStarting')}</span><br><span class="text-muted">${t('task_')}: ${taskId}</span>${dirInfo}`
+  // 优化路线图 0.8：dirName / taskId 均来自后端（目录名可含用户输入），
+  // 而 progressMessage 最终由 v-html 渲染，必须先转义再拼接，否则构成 XSS
+  const dirInfo = dirName ? `<br><span class="text-muted text-xs">${t('dir')}: <span class="font-mono">${escapeHtml(dirName)}</span></span>` : ''
+  progressMessage.value = `<span class="text-accent animate-pulse">${t('taskStarting')}</span><br><span class="text-muted">${t('task_')}: ${escapeHtml(taskId)}</span>${dirInfo}`
 
   // 加载已有中间产物（任务运行中也可查看）
   appState.currentArtifactsTaskId = taskId
@@ -113,7 +115,7 @@ async function mountProgressPage(taskId: string, dirName?: string | null) {
     // 立即用后端实时进度消息（排队中/当前步骤），避免首次展示「任务启动中 + 0%」占位
     if (state.current_message) {
       setProgressMessageHtml(
-        `<span class="text-accent animate-pulse">${state.current_message}</span>`,
+        `<span class="text-accent animate-pulse">${escapeHtml(state.current_message)}</span>`,
       )
     }
     startPolling(taskId)
@@ -201,7 +203,8 @@ async function pollTaskProgress(taskId: string) {
 
     progressPct.value = Math.round((state.current_progress || 0) * 100)
     if (state.current_message) {
-      progressMessage.value = state.current_message
+      // 0.8：后端消息最终由 v-html 渲染，必须转义
+      progressMessage.value = escapeHtml(state.current_message)
     }
 
     markCompletedStepsFromState(state)

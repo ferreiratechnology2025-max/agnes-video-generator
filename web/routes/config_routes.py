@@ -110,7 +110,10 @@ def _key_id(key: str) -> str:
     secret = os.environ.get("AGNES_CONFIG_ID_HMAC_KEY", "agnes-config-keys-id-v1").encode(
         "utf-8"
     )
-    return hashlib.blake2b(key=secret, digest_size=12).hexdigest()
+    # 注意：data 参数（第一个位置参数）必须传入 Key 明文本身。此前误写成仅传
+    # key=secret 而漏掉 data，导致 blake2b 对空串做哈希——所有 Key 生成相同 id，
+    # 多 Key 场景下按 id 删除会永远命中第一个（见优化路线图 0.7）。
+    return hashlib.blake2b(key.encode("utf-8"), key=secret, digest_size=12).hexdigest()
 
 
 @router.get("/api/config/keys")

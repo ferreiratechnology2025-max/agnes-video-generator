@@ -4,9 +4,9 @@
 > - `docs/plans/v5.0/optimization_roadmap.md`（v5.0 路线图，六项已全部完成，仅作历史存档）
 > - `docs/plans/optimization-research/` 存档条目的一次性评定（2026-08-26，评定结论见本文「遗留条目处置」，存档文件本身按流转规则保留）
 >
-> **来源**：2026-08-26 全项目架构评审（后端并发/可靠性/性能/可维护性/测试 + 前端/i18n/构建/部署基础设施），结合旧路线图完成状态核对与调研存档评定汇总而成。
+> **来源**：2026-08-26 全项目架构评审（后端并发/可靠性/性能/可维护性/测试 + 前端/i18n/构建/部署基础设施），结合旧路线图完成状态核对与调研存档评定汇总而成。2026-08-28 二次 review 修订：修正 0.5 误判、补齐 0.6/1.1/1.4 方案缺口、纳入新发现的 3 个高优先级缺陷（0.7~0.9），并将前端新增问题并入 1.7/3.1/3.4。
 >
-> **版本计划**：全部 26 项计划在 **v6 版本线内完成**（当前 v6.1.0；批次 0~3 随后续 v6.2+ 版本分批落地、分批发版）。
+> **版本计划**：全部 **29 项**计划在 **v6 版本线内完成**（当前 v6.2.1；批次 0~3 随后续版本分批落地、分批发版）。
 >
 > **优先级标记**：🔴 高（建议优先）| 🟡 中 | 🟢 低（锦上添花）
 > **批次语义**：批次 0 为即修缺陷（均为小改动，可随发现随修）；批次 1~3 按序推进，批内 🔴 优先。
@@ -17,26 +17,29 @@
 
 | 批次 | 主题 | 条目数 |
 |------|------|--------|
-| 0 | 即修缺陷（小成本高收益） | 6 |
+| 0 | 即修缺陷（小成本高收益） | 9 |
 | 1 | 可靠性与工程基础 | 8 |
 | 2 | 性能 | 5 |
 | 3 | 体验与长期健康度 | 7 |
 
 | # | 优化点 | 优先级 | 一句话价值 | 工作量 | 状态 |
 |---|--------|--------|-----------|--------|------|
-| 0.1 | `docker-run.sh` 版本脱节 + 端口映射 bug | 🔴 | Docker 一键脚本用户不再拉到旧镜像、自定义端口可用 | 小 | ⬜ |
-| 0.2 | 用户停止被重试 2 分钟 + 误删可续传 video_id | 🔴 | 停止即时生效；续传不再浪费 1 次/分的视频配额 | 小 | ⬜ |
-| 0.3 | 事件循环阻塞点（水印重编码 + 同步下载） | 🔴 | 收尾/下载阶段不再冻结整个服务 | 小 | ⬜ |
-| 0.4 | 信号量未获取即释放 + 权重越界静默失败 | 🔴 | 并发上限在边界配置下不再失守 | 小 | ⬜ |
-| 0.5 | 并发安全小修（水印坐标传参 + 尾帧缓存键类型） | 🟡 | 消除两处隐蔽的并发/类型隐患 | 小 | ⬜ |
-| 0.6 | 文档与代码同步（`.env.example` 文档引用） | 🔴 | 新用户可发现多 Key 配置方式 | 小 | ✅ 部分（AGENTS 漂移已修） |
+| 0.1 | `docker-run.sh` 版本脱节 + 端口映射 bug | 🔴 | Docker 一键脚本用户不再拉到旧镜像、自定义端口可用 | 小 | ✅ |
+| 0.2 | 用户停止被重试 2 分钟 + 误删可续传 video_id | 🔴 | 停止即时生效；续传不再浪费 1 次/分的视频配额 | 小 | ✅ |
+| 0.3 | 事件循环阻塞点（水印重编码 + 同步下载） | 🔴 | 收尾/下载阶段不再冻结整个服务 | 小 | ✅ |
+| 0.4 | 信号量未获取即释放 + 权重越界静默失败 | 🔴 | 并发上限在边界配置下不再失守 | 小 | ✅ |
+| 0.5 | 并发安全小修（水印坐标函数属性传参） | 🟡 | 消除并发下水印坐标互相覆盖隐患 | 小 | ✅ |
+| 0.6 | 文档与代码同步（完善 `.env.example` + 文档引用） | 🔴 | 新用户可发现多 Key 配置方式 | 小 | ✅ |
+| 0.7 | `_key_id` 未哈希 data → 多 Key 按 id 删除失效 | 🔴 | 多 Key 场景删除单个 Key 不再误删 | 小 | ✅ |
+| 0.8 | 前端 `v-html` 未转义 → XSS | 🔴 | 后端可控字符串不再注入前端脚本 | 小 | ✅ |
+| 0.9 | 图片生成无重复提交守卫 | 🔴 | 快速连点不再并发重复提交扣费 | 小 | ✅ |
 | 1.1 | 任务状态单写者原则 | 🔴 | 停止/删除后磁盘状态不再回跳 | 中 | ⬜ |
 | 1.2 | 断点续传补全（cues 持久化等） | 🟡 | 长任务续传不再重采 TTS | 中 | ⬜ |
 | 1.3 | 并发等待 + 自适应轮询 | 🟡 | 多场景等待时延从线性叠加降为并行 | 中 | ⬜ |
 | 1.4 | 任务索引 + 列表接口性能 + 分页 | 🟡 | 任务查询从 O(N) 全扫降为 O(1) | 中 | ⬜ |
 | 1.5 | 产物与日志治理（sweep/error_logs/poetry 映射） | 🟡 | 长期运行工作区不再无限膨胀 | 小~中 | ⬜ |
 | 1.6 | 测试补齐（API 重试/并发/续传） | 🔴 | 批次 0 类 bug 从此有回归护栏 | 中 | ⬜ |
-| 1.7 | 前端轮询体验（退避/后台暂停/断连提示） | 🟡 | 服务异常时用户看得到原因 | 小~中 | ⬜ |
+| 1.7 | 前端轮询体验（退避/后台暂停/断连提示/竞态） | 🟡 | 服务异常时用户看得到原因；轮询不堆积 | 小~中 | ⬜ |
 | 1.8 | i18n 拆分懒加载 + 检查脚本硬化 + 接 CI | 🔴 | 首屏 bundle 大幅瘦身，翻译缺失 CI 拦截 | 大 | ⬜ |
 | 2.1 | 成片合成链 ffmpeg 化（消除 3~4 遍重编码） | 🟡 | 合成阶段 3~10 倍提速 | 大 | ⬜ |
 | 2.2 | poetry 逐场景双份编码合并 | 🟡 | 诗词视频编码开销减半以上 | 中 | ⬜ |
@@ -69,10 +72,10 @@
 
 ### 0.2 用户停止被当作失败重试 + 误删可续传 video_id 🔴
 
-**现状问题**：停止时 `_poll_task` 抛 `RuntimeError("Video generation cancelled by user")`（`core/api/agnes_video.py`），而 `MultiScenePipeline._wait_for_video_with_retry`（`core/pipelines/multi_scene.py:274-293`）捕获**所有** Exception 并重试 3 次（退避 20s/40s）→ 停止延迟最长 ~120s；manuscript（`manuscript_video.py:364-379`）、anchor（`anchor_video.py:245-258`）同构。更糟的是重试耗尽后 `os.remove(task.json)`——超时、取消这类"服务端任务可能仍在跑"的情形也删掉了 video_id，续传只能重新提交，浪费最宝贵的视频配额（1 次/分钟/Key）。
+**现状问题**：停止时 `_poll_task` 抛 `RuntimeError("Video generation cancelled by user")`（`core/api/agnes_video.py:253/357`，属 `Exception` 子类），而 `MultiScenePipeline._wait_for_video_with_retry`（`core/pipelines/multi_scene.py:274-293`）捕获**所有** Exception 并重试 3 次（退避 20s/40s）→ 停止延迟最长 ~120s；manuscript（`manuscript_video.py`）、anchor（`anchor_video.py`）、creative（`steps_video.py:228/322/558`）同构。更糟的是重试耗尽后 `os.remove(task.json)`——超时、取消这类"服务端任务可能仍在跑"的情形也删掉了 video_id，续传只能重新提交，浪费最宝贵的视频配额（1 次/分钟/Key）。
 
 **方案**：
-1. `_check_shutdown()` 触发的异常直接穿透，不进入重试循环。
+1. `_check_shutdown()` 触发的异常直接穿透，不进入重试循环（区分「用户取消」与「可重试的临时错误」）。
 2. `task.json` 仅在确认服务端失败（status=failed / 4xx）时删除；超时、取消、网络中断一律保留，续传继续轮询原 video_id。
 
 **验收**：
@@ -85,7 +88,7 @@
 1. `multi_scene.py:131` 与 `simple_video.py:61` 同步调用 `_apply_watermark` → `core/compositor/watermark.py:194` `subprocess.run(ffmpeg, timeout=300)` 对整片重编码，持续数十秒~数分钟期间整个服务冻结（其他任务的轮询、进度落盘、API 请求全部停摆）。
 2. `utils/video.py:13`、`utils/image.py:13` 用同步 `requests.get` 下载，调用点全部在协程中直接执行（`multi_scene.py:270`、`manuscript_video.py:367`、`anchor_video.py:248`、`creative/steps_video.py` 多处、`simple_video.py:104/113/148`、`creative/steps_frames.py:274/304`），每个场景下载 5~30s+ 阻塞事件循环。
 
-**方案**：水印与下载统一 `await asyncio.to_thread(...)`（下载层亦可换 httpx/aiohttp，二选一）；`utils/video.py` tenacity 重试补充 wait 间隔（当前无间隔）。
+**方案**：水印与下载统一 `await asyncio.to_thread(...)`（推荐，避免引入新依赖；下载层亦可换 httpx/aiohttp，二选一）；`utils/video.py` tenacity 重试补充 wait 间隔（当前无间隔）。
 
 **验收**：
 1. 开启水印的任务收尾期间，并发任务的 `GET /api/tasks/{id}` 响应 <1s。
@@ -95,28 +98,62 @@
 
 **现状问题**：`web/deps.py:181-213` `run_pipeline_with_concurrency` 的 `finally` 无条件 `semaphore.release(weight)`。若 `acquire` 抛 `ValueError`（`web/app_state.py:54-56`，weight > max_weight）或协程在排队中被取消，则从未获取槽位却执行释放 → `current` 变负，并发控制永久失效。触发场景真实存在：`MAX_CONCURRENT_WEIGHT = AGNES_RATE_LIMIT // 2`，若用户设 `AGNES_RATE_LIMIT=6`，则 MAX=3 < 稿件权重 4 → 每个稿件任务都抛 ValueError，永远卡 QUEUED 且异常被后台任务静默吞掉。
 
-**方案**：引入 `acquired` 标志，仅获取成功才释放；任务创建端点校验 `weight <= MAX_CONCURRENT_WEIGHT`，越界返回 422；后台任务未捕获异常落盘为 FAILED（不再静默）。
+**方案**：引入 `acquired` 标志，仅获取成功才释放；任务创建端点校验 `weight <= MAX_CONCURRENT_WEIGHT`，越界给出可读错误；后台任务未捕获异常落盘为 FAILED（不再静默）。
+
+> **与 3.5 的关联**：`weight > MAX` 硬拒绝只是临时止血。根治是 3.5「并发上限随 Key 数/配额动态缩放」，使 `MAX_CONCURRENT_WEIGHT` 不再依赖用户可能设低的 `AGNES_RATE_LIMIT`。0.4 先保底（不静默、不破坏信号量），3.5 再做缩放。
 
 **验收**：
 1. 单测：acquire 失败 / 排队中取消两种路径下 `semaphore.current` 不变负。
-2. 低限速配置下创建稿件任务返回 422 并给出可读原因。
+2. 低限速配置下创建稿件任务返回可读错误而非静默卡 QUEUED。
 
-### 0.5 并发安全小修 🟡
+### 0.5 并发安全小修：水印坐标函数属性传参 🟡
 
-1. **水印坐标经函数属性传递**：`watermark.py:120-123` 把 `_wm_pos_x/_wm_pos_y` 写到 `_render_watermark_png` 函数对象上再读回，两任务并发叠加水印时互相覆盖坐标。改为函数返回坐标（dataclass/tuple）。
-2. **尾帧缓存键类型不一致**：`steps_frames.py:198/221/228` 返回 int 键 dict，消费方 `steps_video.py:428` 用 `str(scene_idx) in ...` 查找恒为 False（当前靠磁盘存在性检查兜底未暴露）。统一 str 键 + 单测锁定。
+1. **水印坐标经函数属性传递**：`watermark.py:120-123` 把 `_wm_pos_x/_wm_pos_y` 写到 `_render_watermark_png` 函数对象上再读回（`:177-178`），两任务并发叠加水印时互相覆盖坐标。改为函数返回坐标（dataclass/tuple）。
 
-**验收**：两任务并发开水印，各自水印位置正确；新增单测覆盖尾帧缓存命中路径。
+**评审勘误（2026-08-28）**：原 0.5 第 2 点「尾帧缓存键类型不一致（int 键 / str 查找恒 False）」经复核为**误判**——`steps_frames.py` 落盘与消费都是 `cached[str(scene_idx)]` ↔ `steps_video.py:428 str(scene_idx)`，二者本就是 str 键一致（源自 v5.0 Batch4 重构）。该项从路线图移除，仅作为「补一个尾帧缓存命中单测」并入 1.6 测试补齐。
 
-### 0.6 文档与代码同步 🔴
+**验收**：两任务并发开水印，各自水印位置正确。
+
+### 0.6 文档与代码同步（完善 `.env.example` + 文档引用） 🔴
 
 **本次合并评审中已直接修复**（2026-08-26）：
 - `AGENTS.md §6.2` 曾标注"多 Key 轮询/分层限速为规划未实施、单一共享桶"，实际代码早已实现（`core/api/key_manager.py` KeyRing + `rate_limiter.py` 双桶）→ 已更正。
 - `AGENTS.md §6.6` 曾写"TTS 输出放大 2.5 倍音量"，实际代码为 1.5（`audio_overlay.py` `_AUDIO_VOLUME_FACTOR = 1.5`）→ 已更正。
 
-**剩余工作**（旧路线图条目 1 验收 #9 的遗留）：`README.md` / `README_ZH.md` / `docs/public/getting-started.md` 补充 `.env.example` 引用与多 Key 配置说明。
+**剩余工作**（两项，均已随 0.6 落地完成）：
+1. **完善 `.env.example` 内容**（该文件自 v5.0 提交 `724ef5f` 起已存在，非新建）：
+   - 补充 `HOST` / `PORT`、视频提交桶、并发权重与限速的联动提示；
+   - 移除已废弃项 `AGNES_BASE_URL` / `AGNES_IMAGE_MODEL` / `AGNES_VIDEO_MODEL`（代码中已不再读取，模型改由 Web UI / `POST /api/config` 配置）；
+   - 保留原有 `python-dotenv` 依赖说明与 Key 获取链接。
+2. 在 `README.md` / `README_ZH.md` / `docs/public/getting-started.md` 补充 `.env.example` 引用与多 Key 配置说明。
 
-**验收**：三个文档出现 `.env.example` 与 `AGNES_API_KEY_2..N` 说明。
+**验收**：`.env.example` 覆盖全部在用的环境变量且无过时项（无真实密钥）；三个文档出现 `.env.example` 与 `AGNES_API_KEY_2..N` 说明。
+
+### 0.7 `_key_id` 未哈希 data → 多 Key 按 id 删除失效 🔴
+
+**现状问题**：`web/routes/config_routes.py:113` 的 `_key_id` 实现为 `hashlib.blake2b(key=secret, digest_size=12).hexdigest()`——只传了 `key=`（keyed mode 的密钥）而**未传 data**，`blake2b` 对空字节串 `b''` 做哈希，导致**无论输入什么 Key 都返回相同 id**。后果：
+- `GET /api/config/keys` 返回的每个 Key 的 `id` 完全相同；
+- `DELETE /api/config/keys` 按 id 定位时 `matched[0]` 恒为第一个 Key → **多 Key 场景下删除单个 Key 永远误删第一个**（`config_routes.py:172-177`）。
+
+**方案**：`hashlib.blake2b(key.encode("utf-8"), key=secret, digest_size=12).hexdigest()`——对 Key 明文本身做 keyed hash。
+
+**验收**：配置 2 个 Key，`GET /api/config/keys` 返回的两个 `id` 互不相同；按第二个 id 删除后仅第二个被移除（`key_count` 减 1、`removed` 掩码对应第二个 Key）。
+
+### 0.8 前端 `v-html` 未转义 → XSS 🔴
+
+**现状问题**：`frontend/src/components/ProgressPage.vue:247` 用 `v-html` 渲染 `progressMessage`；`useProgress.ts:93-94` 把 `dirName`（来自后端 `state.dir_name`）与 `taskId` 直接拼进 HTML 字符串，`pollTaskProgress` 又把后端 `current_message` 直接赋给 `progressMessage`。这些值后端可控（任务名/目录名/进度消息），未转义即注入 HTML。项目内已定义 `escapeHtml()`（`i18n/index.ts:60`）但**全库从未被调用**（死代码）。
+
+**方案**：所有拼入 `progressMessage` 的动态值（`dirName`/`taskId`/`current_message`）一律先经 `escapeHtml()`；或改用分字段渲染（`v-text`）替代 `v-html`。
+
+**验收**：任务名/进度消息含 `<img src=x onerror=...>` 时前端按纯文本展示，不执行脚本。
+
+### 0.9 图片生成无重复提交守卫 🔴
+
+**现状问题**：`frontend/src/components/forms/SimpleForm.vue` 的 `submitSimple`（视频）有 `submitting` 守卫，但 `submitImage`（图片）完全无守卫，对应按钮（`:419-424`）也未绑定 `:disabled`。用户快速连点「生成图片」会并发重复提交，触发后端重复生成/扣费。
+
+**方案**：`submitImage` 增加独立 `imageSubmitting` 守卫，对应按钮绑定 `:disabled`；与视频提交的守卫统一抽取为可复用模式。
+
+**验收**：图片生成提交期间按钮禁用，连点不产生第二次请求。
 
 ---
 
@@ -128,10 +165,13 @@
 
 **方案**：确立单写者——停止/删除端点只发信号（`_stop_event` / 删除标记），终态由 pipeline 自己落盘；状态写路径统一走 per-task asyncio 锁 + `load→merge→save`。删除前确认对应后台任务已结束（`app_state.background_tasks` 已持有强引用可查 `done()`）。
 
+> **补：崩溃兜底（2026-08-28 修订）**：单写者原则默认「pipeline 存活才能落终态」，但进程被 `os._exit`（二次 Ctrl+C）/ OOM / 信号杀死时 pipeline 无法落盘，任务会永久停在 RUNNING。需在启动时做一次状态校正（启动扫描将「无活跃 pipeline 但状态为 RUNNING/QUEUED 的遗留任务」标记为可续传的 PENDING 或 FAILED），并配合 sweep 兜底。
+
 **验收**：
 1. 停止后 `task_state.json` 不回跳 RUNNING。
 2. 删除"刚停止"任务后无僵尸目录重建。
 3. 并发读写状态单测通过。
+4. 启动校正后无「无 pipeline 却 RUNNING」的孤儿任务。
 
 ### 1.2 断点续传补全 🟡
 
@@ -158,6 +198,8 @@
 
 **方案**：内存维护 `task_id → dir_name` 索引（创建/删除时增量更新，启动时一次扫描）；列表端点一次扫描取轻字段；`GET /api/tasks` 增加 `limit/offset/status` 分页过滤参数。
 
+> **补：索引归属（2026-08-28 修订）**：`TaskManager` 是每请求新建实例，索引**必须放在应用级全局单例**（如 `web/app_state.py` 模块级，配合 per-task 锁做增量失效），而非 TaskManager 实例属性；否则每个请求各自维护一份、永不共享。当前单进程部署下可行，若未来上多 worker 需改为磁盘索引或共享存储。
+
 **验收**：
 1. 100 任务时列表请求耗时降一个数量级。
 2. 创建/删除后索引一致性单测通过。
@@ -182,16 +224,22 @@
 1. requests-mock/responses 建 API 重试矩阵单测（单 Key 429 / 多 Key 429 / 5xx / 超时 / 400 降帧 / 轮询连续失败）。
 2. 并发单测：信号量释放语义、权重越界、停止竞态。
 3. resume 单测：simple video_id 续传、停止后 `task.json` 保留、检查点恢复不重复调 LLM。
+4. 补 `_key_id` 哈希唯一性单测（0.7）、尾帧缓存命中单测（0.5 勘误后剩余部分）。
+
+> **实施节奏（2026-08-28 修订）**：本项与批次 0 并行推进——每修一个批次 0 项，同步补一个对应回归测试，而非等批次 0 全部修完再补，避免缺陷在无护栏窗口复发。
 
 **验收**：上述矩阵全部有对应用例；CI 覆盖率门槛相应上调；批次 0 每个修复都有回归测试。
 
 ### 1.7 前端轮询体验 🟡
 
-**现状问题**：`useProgress.ts` 固定 30s 轮询、catch 为空（服务故障时无限静默轮询）；`useTasks.ts` 5s 轮询无 in-flight 守卫；全代码库无 `visibilitychange` 处理，后台标签页持续发请求。
+**现状问题**：
+1. `useProgress.ts` 固定 30s 轮询、catch 为空（服务故障时无限静默轮询）；`useTasks.ts` 5s 轮询无 in-flight 守卫；全代码库无 `visibilitychange` 处理，后台标签页持续发请求。
+2. **（2026-08-28 补充）`loading` 状态失效**：`loadTaskList` 只在 catch 置 false，正常路径从不置 true，该状态从未被真正使用；`TaskListPanel.loadList` 用裸 `fetch` 且无 catch（未处理 rejection）。
+3. **（2026-08-28 补充）轮询竞态**：`pollTaskProgress` 首次慢请求与 interval 下一次请求的响应可能乱序覆盖进度，且 interval 回调里已进入的异步 `getTask` 无法取消。
 
-**方案**：页面隐藏时暂停轮询、恢复时立即补一次；连续失败 N 次指数退避并显示"连接异常"横幅；列表轮询加 in-flight 守卫、间隔放宽到 10~15s。
+**方案**：页面隐藏时暂停轮询、恢复时立即补一次；连续失败 N 次指数退避并显示"连接异常"横幅；列表轮询加 in-flight 守卫、间隔放宽到 10~15s；`loading` 状态补全赋值逻辑（或列表真正使用）；`pollTaskProgress` 加 in-flight 标志或改用 `setTimeout` 链式调度消除并发。
 
-**验收**：后台标签页 0 请求；服务宕机时前端显示断连提示而非静止进度条。
+**验收**：后台标签页 0 请求；服务宕机时前端显示断连提示而非静止进度条；慢网络下进度不出现回跳。
 
 ### 1.8 i18n 拆分懒加载 + 检查硬化 + 接 CI 🔴
 
@@ -222,6 +270,8 @@
 2. 对齐与音量：`tpad/apad/volume` 合并进一条 filter 链一次编码完成。
 3. 字幕：LLM 逐条样式（`subtitle_styles.json`）转 ASS 后走 `subtitles` 滤镜，摆脱 moviepy 逐帧文本渲染；保留 moviepy 路径作兜底，配置开关灰度。
 
+> **取舍（2026-08-28 修订）**：字幕 ASS 化与**词级细粒度字幕**（`generate_cue_aware_srt`，以 edge_tts 词级时间戳为真值）+ **逐条样式**存在冲突——`subtitles` 滤镜对词级逐字高亮/动画支持弱，libass 的 CJK 描边/字体渲染与 moviepy 存在观感差异。方案需明确：ASS 路径首版**降级为句级样式**（保描边/字体/位置，放弃词级逐字动效），词级动效仍走 moviepy 兜底路径；二者由配置开关按场景灰度，避免字幕观感回退。
+
 **验收**：合成阶段耗时下降 ≥3 倍；输出与旧路径做音画字幕对照回归（含逐条样式场景）；旧路径开关可回退。
 
 ### 2.2 poetry 逐场景双份编码合并 🟡
@@ -238,7 +288,9 @@
 
 **方案**：令牌桶改异步原生（asyncio 条件变量定时补令牌），停止时跳过限速等待直接退出；重型编码用专用 `ThreadPoolExecutor`（`loop.run_in_executor`），与轻量请求隔离。
 
-**验收**：限速等待中点停止即时退出；并发编码任务下 API 请求不排队线程池。
+> **补：同步调用方兼容（2026-08-28 修订）**：`acquire()` 同时被**纯同步脚本**调用（`scripts/regression_runner.py`、`scripts/scene_runner.py`，非 asyncio 上下文）。异步化须**保留同步 `acquire()`**（供脚本/测试/`to_thread` 场景），仅新增异步原生路径供流水线使用，二者共享同一桶状态；否则回归脚本会坏。另补边界：`AGNES_RATE_LIMIT=0` 时 `refill_rate=0` 导致 `acquire()` 内 `wait_time = 1/0` 除零崩溃，须在 `refill_rate == 0` 时明确放行或报错。
+
+**验收**：限速等待中点停止即时退出；并发编码任务下 API 请求不排队线程池；同步脚本回归不破。
 
 ### 2.4 进度状态写盘节流 🟢
 
@@ -266,7 +318,11 @@
 
 **现状问题**：`frontend/src/api/index.ts` 的 `request()` 不检查 `r.ok`，5xx/HTML 错误页抛出误导性解析错误；8 个文件绕过 api 层裸 `fetch`；原生 `alert()/confirm()` 散布 35+ 处；5 个任务表单重复同一套提交流程（`parseResolution()` 定义了三次）。
 
-**方案**：`request()` 统一检查 `r.ok` 并抛带 `detail` 的错误；收敛裸 fetch；抽 `useConfirm`/错误 Toast 替换原生弹窗；抽 `useTaskSubmit(taskType)` composable + `collectAudioSubtitleFields()`。
+**（2026-08-28 补充）**：
+- `saveApiKey`（`useConfig.ts:22-29`）`if (r.ok)` 无 else 分支，后端 5xx 时**静默失败**、用户无任何反馈。
+- `TaskListPanel.loadList`（`:19-24`）裸 `fetch` 且无 catch。
+
+**方案**：`request()` 统一检查 `r.ok` 并抛带 `detail` 的错误；收敛裸 fetch；抽 `useConfirm`/错误 Toast 替换原生弹窗；抽 `useTaskSubmit(taskType)` composable + `collectAudioSubtitleFields()`；`saveApiKey` 等补 else 分支提示用户。
 
 **验收**：后端 500 时前端展示可读错误；表单提交逻辑改动只需改一处。
 
@@ -294,13 +350,17 @@
 - GA4（`useGa.ts` 硬编码测量 ID）加配置开关 + `task_failed` 上报脱敏（隐私合规）。
 - 表单草稿保留（`CreatePanel` 用 `keep-alive` 或状态提升）；图片生成补提交中防抖；`ProgressPage` 加 `:key="task_id"`。
 
+**（2026-08-28 补充）**：
+- `useVoice.previewVoice` 的 `URL.createObjectURL` 从不 `revokeObjectURL`，反复试听泄漏 blob URL（`useVoice.ts:112-138`）。
+- `useTheme` 的 `matchMedia` 监听器无移除（`useTheme.ts:65-71`，SPA 单例下风险低，记录待清理）。
+
 **验收**：375px 宽视口无溢出不可点元素；模态可键盘完整操作。
 
 ### 3.5 配置收敛 🟢
 
 **现状问题**：约 12 个环境变量散落各处；`web/app_state.py:26` 的 `AGNES_RATE_LIMIT` 默认固定 20，而 `core/api/rate_limiter.py` 默认 20×Key 数，多 Key 部署时口径冲突（并发权重上限不随 Key 扩展，注释"与 rate_limiter.py 一致"已失真）。
 
-**方案**：引入 typed Settings（如 pydantic-settings）统一收敛；`app_state` 的并发上限对齐 `rate_limiter._effective_rate()`。
+**方案**：引入 typed Settings（如 pydantic-settings）统一收敛；`app_state` 的并发上限对齐 `rate_limiter._effective_rate()`（使 0.4 的「权重越界」从硬拒绝变为随配额缩放）。
 
 **验收**：环境变量清单唯一出处；多 Key 下并发上限随配额缩放。
 
@@ -363,7 +423,7 @@
 
 ## 实施约定
 
-1. **批次顺序**：0 → 1 → 2 → 3；批内 🔴 优先。批次 0 各条目互相独立，可随时单独执行。
+1. **批次顺序**：0 → 1 → 2 → 3；批内 🔴 优先。批次 0 各条目互相独立，可随时单独执行；**1.6（测试）与批次 0 并行**，每修一项同步补一个回归测试。
 2. **每项完成后**：按 `AGENTS.md` 自验（`py_compile` → 端点冒烟 → 涉流水线跑 `./scripts/run_mock_regression.sh` → 涉前端跑 `i18n_check` + `npm run build`），并更新本文状态列与「实施记录」。
 3. **回归联动**：凡改变任务状态机/产物结构的条目（1.1/1.2/2.1/2.2），同步更新 `docs/dev/regression_test_plan.md`。
 4. **新增待调研点**：价值存疑的新点子仍按 `docs/plans/optimization-research/README.md` 流转规则存档，评定后转入本文编批次。
@@ -373,7 +433,9 @@
 | 日期 | 条目 | 落地文件 | 自验记录 |
 |------|------|---------|---------|
 | 2026-08-26 | 0.6（部分） | `AGENTS.md` | 修正式文档化漂移：§6.2 多 Key/双桶现状、§6.6 音量系数 1.5、路线图引用路径更新 |
+| 2026-08-28 | 路线图 review 修订 | `docs/plans/v6.0/optimization_roadmap.md` | 修正 0.5 尾帧误判（移除该项，仅留水印坐标）；0.6 明确「完善已有 .env.example」；1.1 补崩溃兜底；1.4 补索引归属；2.1 补词级字幕取舍；2.3 补同步调用方兼容 + 除零边界；新增 0.7（`_key_id` 哈希）/0.8（前端 XSS）/0.9（图片重复提交）；前端新问题并入 1.7/3.1/3.4 |
+| 2026-08-28 | 批次 0 全部 9 项落地 | 0.1 `docker-run.sh`；0.2 `core/api/agnes_video.py`+`core/pipelines/{multi_scene,manuscript_video,anchor_video,creative/steps_video}.py`；0.3 `core/api/{agnes_video,agnes_image}.py`+`core/pipelines/__init__.py`+`utils/{video,image}.py`+6 个 pipeline（15 处 `await …save()`）；0.4 `web/deps.py`；0.5 `core/compositor/watermark.py`；0.6 完善 `.env.example`+`README.md`/`README_ZH.md`/`getting-started.md`；0.7 `web/routes/config_routes.py`；0.8 `frontend/src/composables/useProgress.ts`；0.9 `frontend/src/components/forms/SimpleForm.vue` | `py_compile` 全通过；370 单测 + 28 项 mock 回归全通过（7m39s）；`i18n_check` 通过；`vue-tsc --noEmit` + `vite build` 通过；端点冒烟（`/`、`/api/config`、`/api/tasks`、`/api/voices` 均 200）；`_key_id` 3 个 Key 各自精确命中；信号量 `acquire(4)` 失败后 `current` 保持 0 不变负 |
 
 ---
 
-*文档版本：v1.0（合并版）| 创建日期：2026-08-26 | 目标版本：v6 版本线内全部完成 | 状态：批次 0~3 待实施*
+*文档版本：v1.1（2026-08-28 review 修订）| 创建日期：2026-08-26 | 目标版本：v6 版本线内全部完成 | 状态：批次 0~3 待实施*

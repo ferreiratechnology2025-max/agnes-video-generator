@@ -15,7 +15,7 @@ import os
 import re
 from typing import Callable, List, Optional
 
-from core.api.agnes_video import AgnesVideoAPI
+from core.api.agnes_video import AgnesVideoAPI, VideoTaskCancelled
 from core.compositor.concatenator import VideoConcatenator
 from core.screenwriter import Screenwriter
 from core.pipelines import MultiScenePipeline, PipelineShutdown
@@ -364,8 +364,11 @@ class ManuscriptVideoPipeline(MultiScenePipeline):
             for retry in range(_WAIT_RETRIES):
                 try:
                     video_output = await self.video_api.wait_for_video(video_id)
-                    video_output.save(video_path)
+                    await video_output.save(video_path)
                     break
+                except VideoTaskCancelled:
+                    # 优化路线图 0.2：用户停止不是临时错误，不重试、直接穿透
+                    raise
                 except Exception as e:
                     if retry < _WAIT_RETRIES - 1:
                         delay = _WAIT_RETRY_INTERVAL_BASE_SECONDS * (retry + 1)

@@ -29,7 +29,16 @@ class ImageOutput:
         self.ext = ext
         self.data = data
 
-    def save(self, path: str) -> None:
+    async def save(self, path: str) -> None:
+        """保存图片到 path（异步）。
+
+        优化路线图 0.3：URL 下载为同步 requests 流式读取，协程中直接调用会
+        阻塞事件循环；整体下沉到线程池执行。
+        """
+        await asyncio.to_thread(self._save_sync, path)
+
+    def _save_sync(self, path: str) -> None:
+        """同步保存实现（供线程池调用；同步上下文可直接使用）。"""
         if self.fmt == "url":
             download_image(self.data, path)
         else:

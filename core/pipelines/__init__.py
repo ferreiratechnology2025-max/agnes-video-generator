@@ -728,15 +728,24 @@ class BasePipeline(ABC):
         """水印语言检测用文本。子类可覆盖以返回合适的来源文本。"""
         return ""
 
-    def _apply_watermark(self, video_path: str) -> str:
-        """通用水印后处理：根据配置叠加水印（不修改原文件则原样返回）。"""
+    async def _apply_watermark(self, video_path: str) -> str:
+        """通用水印后处理：根据配置叠加水印（不修改原文件则原样返回）。
+
+        优化路线图 0.3：``add_watermark`` 内部是 ffmpeg 全片重编码
+        （``subprocess.run``，timeout=300s），此前在协程中同步执行会冻结整个
+        事件循环——期间其他任务的轮询、进度落盘、API 请求全部停摆。
+        改为下沉线程池执行。
+        """
         wm_config = get_watermark_config()
         if wm_config.get("enabled") and os.path.exists(video_path):
             lang = wm_config.get("language", "auto")
             if lang == "auto":
                 lang = detect_language(self._get_watermark_language_text())
             wm_output = video_path + ".wm_tmp.mp4"
-            if add_watermark(video_path, wm_output, language=lang):
+            ok = await asyncio.to_thread(
+                add_watermark, video_path, wm_output, language=lang
+            )
+            if ok:
                 os.replace(wm_output, video_path)
         return video_path
 

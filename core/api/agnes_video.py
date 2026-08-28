@@ -37,13 +37,44 @@ DURATION_PRESETS = {
 _UPLOAD_RETRY_BASE_DELAY_SECONDS = 30
 
 
+class VideoTaskCancelled(RuntimeError):
+    """用户停止任务导致的取消（优化路线图 0.2）。
+
+    继承 RuntimeError 以保持向后兼容，但语义上区别于可重试的临时错误
+    （超时 / 网络 / 5xx）：停止必须立即穿透上层重试循环，否则用户点停止后
+    仍要经历 20s/40s 退避才真正停下。
+    """
+
+
+def is_remote_video_failure(exc: BaseException) -> bool:
+    """判断是否为「服务端已确认失败」——只有这种情况才可安全丢弃 video_id。
+
+    仅当服务端明确返回 ``status=failed``（异常信息含 "Video generation failed:"）
+    时为 True。超时、用户取消、网络中断时服务端任务**可能仍在运行**，必须返回
+    False 以保留 video_id 供续传，避免重复提交浪费视频配额（1 次/分钟/Key）。
+
+    优化路线图 0.2：此前流水线在任何异常下都删除 task.json，导致超时/取消后
+    续传只能重新提交。
+    """
+    return "Video generation failed:" in str(exc)
+
+
 class VideoOutput:
     def __init__(self, fmt: str, ext: str, data: str):
         self.fmt = fmt
         self.ext = ext
         self.data = data
 
-    def save(self, path: str) -> None:
+    async def save(self, path: str) -> None:
+        """保存视频到 path（异步）。
+
+        优化路线图 0.3：URL 下载为同步 requests 流式读取，耗时 5~30s+，
+        此前在协程中直接调用会阻塞事件循环；整体下沉到线程池执行。
+        """
+        await asyncio.to_thread(self._save_sync, path)
+
+    def _save_sync(self, path: str) -> None:
+        """同步保存实现（供线程池调用；同步上下文可直接使用）。"""
         if self.fmt == "url":
             download_video(self.data, path)
         else:
@@ -250,7 +281,7 @@ class AgnesVideoAPI:
         while True:
             # M2: 每次轮询前检查停止信号
             if self.shutdown_event and self.shutdown_event.is_set():
-                raise RuntimeError("Video generation cancelled by user")
+                raise VideoTaskCancelled("Video generation cancelled by user")
 
             elapsed = asyncio.get_event_loop().time() - start_time
             if elapsed > max_poll_duration:
@@ -354,7 +385,7 @@ class AgnesVideoAPI:
         max_rotations = len(ring) * self.max_retries
         while attempt < self.max_retries:
             if self.shutdown_event and self.shutdown_event.is_set():
-                raise RuntimeError("Video generation cancelled by user")
+                raise VideoTaskCancelled("Video generation cancelled by user")
             try:
                 logger.info(f"[AgnesVideo] Submitting {mode_desc} (attempt {attempt + 1}/{self.max_retries})...")
                 # 视频提交独立限速桶（服务端 1/min 硬限制，不与 chat/image 共享配额）

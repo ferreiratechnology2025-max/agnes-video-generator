@@ -94,6 +94,20 @@ Agnes Video Generator 完全免费且开源，**本项目绝不会提供付费�
 | **水印** | 无水印 | 内置水印 | 内置水印 | C2PA 元数据 | 内置水印 |
 | **使用限制** | 无限（16次/分钟限速） | 按计算量计费 | 按生成量计费 | 按生成量计费 | 按生成量计费 |
 
+## ⚙️ 配置说明
+
+所有配置均通过环境变量设置，无需配置文件。如需一份带注释的模板，可直接复制项目自带的 `.env.example`：
+
+```bash
+cp .env.example .env    # 然后编辑其中的 AGNES_API_KEY
+```
+
+[`.env.example`](.env.example) 列出了全部支持的环境变量及其默认值：API Key、多 Key 轮询、限速参数、服务端口、模型覆盖与运维选项。
+
+> **有多个 API Key？** 依次设置 `AGNES_API_KEY`、`AGNES_API_KEY_2`、`AGNES_API_KEY_3` …（序号必须连续）。限速配额会随 Key 数量线性放大，遇到 429 会自动轮换到下一个 Key，并发上限也随之提升。
+
+完整步骤见：[快速开始 → 配置 API Key](docs/public/getting-started.zh.md)。
+
 ## 📚 文档导航
 
 - **[核心功能](docs/public/features.zh.md)** — 多种创作模式、完全免费的 AI 模型链、AI 旁白配音与智能字幕、灵活的创作控制、生产级可靠性与多语言 Web UI。

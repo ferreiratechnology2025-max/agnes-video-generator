@@ -17,7 +17,7 @@ import re
 from typing import Callable, List, Optional
 
 from core.api.agnes_image import AgnesImageAPI
-from core.api.agnes_video import AgnesVideoAPI
+from core.api.agnes_video import AgnesVideoAPI, VideoTaskCancelled
 from core.compositor.concatenator import VideoConcatenator
 from core.pipelines import MultiScenePipeline, PipelineShutdown
 from core.screenwriter import Screenwriter
@@ -145,7 +145,7 @@ class AnchorPipeline(MultiScenePipeline):
                     prompt=prompt,
                     size=size,
                 )
-            img_output.save(output_path)
+            await img_output.save(output_path)
         except Exception as e:
             logger.error(f"[Anchor] Anchor image generation failed: {e}")
             raise RuntimeError(f"主播形象生成失败: {e}")
@@ -245,8 +245,11 @@ class AnchorPipeline(MultiScenePipeline):
         for attempt in range(3):
             try:
                 video_output = await self.video_generator.wait_for_video(video_id)
-                video_output.save(clip_path)
+                await video_output.save(clip_path)
                 break
+            except VideoTaskCancelled:
+                # 优化路线图 0.2：用户停止不是临时错误，不重试、直接穿透
+                raise
             except Exception as e:
                 if attempt < 2:
                     logger.warning(

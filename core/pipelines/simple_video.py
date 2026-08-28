@@ -57,8 +57,8 @@ class SimpleVideoPipeline(BasePipeline):
         try:
             video_path = await self._submit_and_wait()
 
-            # 水印后处理（共享实现）
-            video_path = self._apply_watermark(video_path)
+            # 水印后处理（共享实现；异步，避免阻塞事件循环）
+            video_path = await self._apply_watermark(video_path)
 
             self._state.status = StepStatus.COMPLETED
             self._state.final_video_file = video_path
@@ -102,7 +102,7 @@ class SimpleVideoPipeline(BasePipeline):
             self.task_manager.update_state(video_id=saved_video_id)
             await self._emit("video_gen", "running", f"恢复轮询视频任务 {saved_video_id[:16]}...", _PROGRESS_WAIT)
             video_output = await self.video_api.wait_for_video(saved_video_id)
-            video_output.save(video_path)
+            await video_output.save(video_path)
             return video_path
 
         # 也检查 state 中的 video_id（旧版 resume 兼容）
@@ -111,7 +111,7 @@ class SimpleVideoPipeline(BasePipeline):
             self._save_task_json(self.working_dir, {"video_id": self._state.video_id})
             await self._emit("video_gen", "running", f"恢复轮询视频任务 {self._state.video_id[:16]}...", _PROGRESS_WAIT)
             video_output = await self.video_api.wait_for_video(self._state.video_id)
-            video_output.save(video_path)
+            await video_output.save(video_path)
             return video_path
 
         # 构建参考图列表
@@ -146,7 +146,7 @@ class SimpleVideoPipeline(BasePipeline):
         await self._emit("video_gen", "running", f"等待视频生成 {video_id[:16]}...", _PROGRESS_WAIT)
 
         video_output = await self.video_api.wait_for_video(video_id)
-        video_output.save(video_path)
+        await video_output.save(video_path)
 
         await self._emit("video_gen", "completed", "视频生成完成", _PROGRESS_DONE)
         return video_path

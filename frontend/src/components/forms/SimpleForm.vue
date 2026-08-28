@@ -52,6 +52,8 @@ const image = reactive({
 
 const advancedCollapsed = reactive({ video: true, image: true })
 const submitting = ref(false)
+// 优化路线图 0.9：图片生成独立守卫（此前仅视频提交有守卫，图片连点会并发重复提交）
+const imageSubmitting = ref(false)
 
 // ── 按所选视频模型动态派生选项 ──
 const currentVideoModel = computed(() => appState.models.video || '')
@@ -188,6 +190,9 @@ async function submitImage() {
     alert(t('enterImagePrompt'))
     return
   }
+  // 0.9：防重复提交（与 submitSimple 对齐）
+  if (imageSubmitting.value) return
+  imageSubmitting.value = true
   const form = new FormData()
   form.append('prompt', prompt)
   form.append('size', image.size)
@@ -205,6 +210,8 @@ async function submitImage() {
   } catch (e: any) {
     trackEvent('create_task_failed', { task_type: 'image', error: (e.message || '').slice(0, 120) })
     alert(t('failCreate') + ': ' + e.message)
+  } finally {
+    imageSubmitting.value = false
   }
 }
 </script>
@@ -418,9 +425,10 @@ async function submitImage() {
 
       <button
         class="w-full py-3.5 bg-accent text-accent-ink hover:bg-accent/90 rounded-xl text-base font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed glow-btn"
+        :disabled="imageSubmitting"
         @click="submitImage"
       >
-        {{ t('imgGenerate') }}
+        {{ imageSubmitting ? t('submitting') : t('imgGenerate') }}
       </button>
 
       <div v-if="image.imageResultVisible" class="mt-4 p-4 glass-card rounded-lg">
