@@ -65,6 +65,23 @@ class AudioOverlayMixin:
             f"audio={audio_dur:.2f}s, final={final_dur:.2f}s"
         )
 
+        # ── 2.1b：无字幕时视频+音频在一条 ffmpeg filter 链一次编码完成 ──
+        # （替代 Step 3 tpad + Step 4 apad/volume + Step 5 moviepy 三遍编码）
+        if not (srt_path and os.path.exists(srt_path) and subtitle_style):
+            try:
+                result = AudioOverlayMixin._ffmpeg_mux_aligned(
+                    silent_path, audio_path, output_path, final_dur,
+                )
+                # fast path 自行清理拼接中间产物（原 finally 不经过此分支）
+                if os.path.exists(silent_path):
+                    os.remove(silent_path)
+                return result
+            except Exception as e:
+                logger.warning(
+                    f"[Compositor] ffmpeg single-pass mux failed, "
+                    f"fallback moviepy chain: {e}"
+                )
+
         video_input = silent_path
         tmp_files = [silent_path]
 
@@ -199,6 +216,38 @@ class AudioOverlayMixin:
                         pass
 
         logger.info(f"[Compositor] concat_videos_with_audio_overlay done: {output_path}")
+        return output_path
+
+    @staticmethod
+    def _ffmpeg_mux_aligned(
+        silent_path: str, audio_path: str, output_path: str, final_dur: float,
+    ) -> str:
+        """2.1b：视频+音频在一条 ffmpeg filter 链中完成对齐与合成（一次编码）。
+
+        - 视频不足 ``final_dur`` → ``tpad stop_mode=clone`` 冻结尾帧补齐
+        - 音频不足 ``final_dur`` → ``apad=whole_dur`` 补静音 + ``volume=1.5``
+          补偿 edge_tts 默认低音量（与既有语义一致）
+        - ``-t final_dur`` 强制截断对齐
+
+        Returns:
+            输出文件路径。失败抛 RuntimeError（调用方回退 moviepy）。
+        """
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", silent_path,
+            "-i", audio_path,
+            "-filter_complex",
+            f"[0:v]tpad=stop_mode=clone:stop_duration={final_dur:.2f}[v];"
+            f"[1:a]apad=whole_dur={final_dur:.2f},volume=1.5[a]",
+            "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast",
+            "-c:a", _AUDIO_CODEC, "-b:a", _AUDIO_BITRATE,
+            "-t", f"{final_dur:.2f}",
+            output_path,
+        ]
+        VideoConcatenator._run_ffmpeg(
+            cmd, desc=f"mux video+audio (single-pass, {final_dur:.1f}s)",
+        )
         return output_path
 
     @staticmethod

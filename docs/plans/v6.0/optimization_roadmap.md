@@ -41,7 +41,7 @@
 | 1.6 | 测试补齐（API 重试/并发/续传） | 🔴 | 批次 0 类 bug 从此有回归护栏 | 中 | ✅ |
 | 1.7 | 前端轮询体验（退避/后台暂停/断连提示/竞态） | 🟡 | 服务异常时用户看得到原因；轮询不堆积 | 小~中 | ✅ |
 | 1.8 | i18n 拆分懒加载 + 检查脚本硬化 + 接 CI | 🔴 | 首屏 bundle 大幅瘦身，翻译缺失 CI 拦截 | 大 | ✅ |
-| 2.1 | 成片合成链 ffmpeg 化（消除 3~4 遍重编码） | 🟡 | 合成阶段 3~10 倍提速 | 大 | ⬜ |
+| 2.1 | 成片合成链 ffmpeg 化（消除 3~4 遍重编码） | 🟡 | 合成阶段 3~10 倍提速 | 大 | 🟡 部分（2.1a/2.1b ✅） |
 | 2.2 | poetry 逐场景双份编码合并 | 🟡 | 诗词视频编码开销减半以上 | 中 | ⬜ |
 | 2.3 | 限速器异步化 + 编码专用线程池 | 🟡 | 停止即时响应限速等待；线程池不再饥饿 | 中 | ✅ |
 | 2.4 | 进度状态写盘节流 | 🟢 | 事件循环周期性卡顿消除 | 小~中 | ✅ |
@@ -447,6 +447,8 @@
 | 2026-08-28 | 批次 1.8 落地 | `frontend/src/i18n/translations.ts`（删除）→ `langs/{lang}.json` 22 个；`frontend/src/i18n/index.ts`（`zh/en` 静态预载 + `import.meta.glob` 动态加载）；`scripts/i18n_check.py`（JSON diff + 占位符 + en 硬阻断 2/其他缺失 1）；`.github/workflows/test.yml`（`i18n-check` job）；`AGENTS.md` 文案规范同步 | 主 bundle `721 kB → 305 kB`（gzip `226 kB → 97 kB`，-58%）；20 个语言 chunk 30-38 kB 按需加载；`i18n_check` 通过（仅提醒 `keySrcConfig` en 同 zh）；`vue-tsc --noEmit` + `vite build` 通过；`regression_runner` i18n 前置门槛兼容（返回码语义 0/1/2） |
 | 2026-08-28 | 批次 2（2.3/2.4/2.5 落地；2.1/2.2 待独立批次） | 2.3 `core/api/rate_limiter.py`（`_try_acquire` 解耦 + `acquire_async(stop_event)` 异步原生 + 速率 0 除零防护）+ `core/api/{agnes_video,agnes_image}.py`（4 处调用改异步原生）+ `core/pipelines/__init__.py`（`_ENCODING_EXECUTOR` 专用线程池）；2.4 `core/task_manager.py`（`_save` 去 `indent=2`）+`core/pipelines/__init__.py`（`_emit` 进度节流 `_PROGRESS_SAVE_THROTTLE_SECONDS=0.5`）；2.5 `core/pipelines/manuscript_video.py`（段落 prompt `asyncio.Semaphore(3)` 有限并发，进度语义「开始→完成」） | 新增 `tests/test_rate_limiter_async.py`（5 项）+`test_progress_throttle.py`（3 项）通过；`test_api_retry_matrix`/`test_pipeline_contract`/`test_manual_pause`/`test_core` 全通过；同步 `acquire` 保留（chat/脚本兼容）；`FakeLimiter` 补 `acquire_async`；修复 acquire_async 预支语义重复 `_try_acquire` 无限等待 bug |
 | 2026-08-28 | 批次 2 剩余评估 | 2.1（成片合成链 ffmpeg 化）/2.2（poetry 编码合并）为**大工程**：改动合成链核心（moviepy→ffmpeg concat demuxer + 单 filter 链 + 字幕 ASS 化），回归面广、验证成本高（需完整 mock 回归），建议作为独立批次（2.1a 拼接 /-c copy → 2.1b 对齐与音量单链 → 2.1c 字幕 ASS 灰度），不在当前批次内仓促实施 |
+| 2026-08-28 | 2.1a 落地（拼接 ffmpeg 化第一步） | `core/compositor/concatenator/concat.py`（`_try_ffmpeg_copy_concat`：probe 分辨率/帧率一致 → concat demuxer + `-c copy`，失败自动回退 moviepy compose） | 新增 `tests/test_concat_ffmpeg_fastpath.py`（5 项）通过；`test_pipeline_contract`/`test_core` 无回归；2.1b（对齐/音量单链）/2.1c（字幕 ASS 灰度）待后续 |
+| 2026-08-28 | 2.1b 落地（无字幕路径单链一次编码） | `core/compositor/concatenator/audio_overlay.py`（`_ffmpeg_mux_aligned`：`tpad` 冻结补帧 + `apad=whole_dur` 静音 + `volume=1.5` 单条 filter 链 + `-t` 对齐，一次编码替代 Step3/4/5 三遍编码；无字幕时启用，失败回退 moviepy） | 新增 `tests/test_overlay_single_pass.py`（2 项）通过（断言 `_run_ffmpeg` 仅 1 次 + 音频长于视频尾帧补齐）；2.1c（字幕 ASS 灰度，覆盖有字幕场景）仍待后续 |
 
 ---
 

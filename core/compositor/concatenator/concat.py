@@ -48,6 +48,12 @@ class ConcatMixin:
             logger.info("[Compositor] Single video, copied directly")
             return output_path
 
+        # 2.1a：所有片段分辨率/帧率一致时走 ffmpeg concat demuxer + -c copy
+        # （秒级无损，消除 moviepy 全量重编码）；分辨率不一致或 ffmpeg 失败
+        # 时自动回退 moviepy compose（保持缩放语义）。
+        if ConcatMixin._try_ffmpeg_copy_concat(video_paths, output_path):
+            return output_path
+
         clips = [VideoFileClip(p) for p in video_paths]
         # L7: 统一缩放到第一个视频的分辨率，避免 compose 模式 pad 黑边
         target_w, target_h = clips[0].w, clips[0].h
@@ -92,6 +98,72 @@ class ConcatMixin:
 
         logger.info(f"[Compositor] Concatenation complete: {output_path}")
         return output_path
+
+    @staticmethod
+    def _try_ffmpeg_copy_concat(video_paths: List[str], output_path: str) -> bool:
+        """2.1a：尝试 ffmpeg concat demuxer + ``-c copy`` 快速拼接。
+
+        仅当所有片段的分辨率与帧率完全一致时执行（``-c copy`` 不重编码，
+        参数不一致会导致拼接结果时长/时间戳错误）；任何探针或拼接失败均
+        返回 False，由调用方安全回退 moviepy。
+
+        Returns:
+            True=已成功产出；False=不适用或失败（需回退）。
+        """
+        try:
+            # 探针：所有片段 width,height,avg_frame_rate 必须一致
+            sigs = set()
+            for p in video_paths:
+                r = subprocess.run(
+                    ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                     "-show_entries", "stream=width,height,avg_frame_rate",
+                     "-of", "csv=s=x:p=0", p],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15,
+                )
+                if r.returncode != 0 or not r.stdout.strip():
+                    return False
+                sigs.add(r.stdout.strip())
+            if len(sigs) != 1:
+                logger.info(
+                    f"[Compositor] ffmpeg copy concat skipped: 片段分辨率/帧率不一致 "
+                    f"({len(sigs)} 种签名)"
+                )
+                return False
+
+            # 写 concat demuxer 列表（路径单引号转义）
+            concat_file = output_path + ".concat.txt"
+            with open(concat_file, "w", encoding="utf-8") as f:
+                for p in video_paths:
+                    esc = p.replace("'", "'\\''")
+                    f.write(f"file '{esc}'\n")
+            try:
+                r = subprocess.run(
+                    ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                     "-i", concat_file, "-c", "copy", output_path],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600,
+                )
+                if r.returncode != 0:
+                    logger.warning(
+                        f"[Compositor] ffmpeg copy concat failed "
+                        f"(code {r.returncode}), fallback moviepy"
+                    )
+                    return False
+                ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
+                if ok:
+                    logger.info(
+                        f"[Compositor] ffmpeg copy concat done (fast path): "
+                        f"{len(video_paths)} 个片段 → {output_path}"
+                    )
+                return ok
+            finally:
+                if os.path.exists(concat_file):
+                    try:
+                        os.remove(concat_file)
+                    except OSError:
+                        pass
+        except Exception as e:
+            logger.warning(f"[Compositor] ffmpeg copy concat probe failed: {e}")
+            return False
 
     @staticmethod
     def _resolve_subtitle_position(
