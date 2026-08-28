@@ -8,6 +8,49 @@
 [![Docker Hub](https://img.shields.io/docker/pulls/lcy362/free-short-video?label=docker%20pulls)](https://hub.docker.com/r/lcy362/free-short-video)
 [![npm](https://img.shields.io/npm/v/free-short-video?label=npm)](https://www.npmjs.com/package/free-short-video)
 
+<p align="center">
+  <img src="images/home.png" alt="Agnes Video Generator — Free AI Video Generator" width="720">
+</p>
+
+<!--
+schema.org structured data for SEO/GEO indexing. GitHub does not execute this script, but the raw JSON-LD is visible to search engines and AI engines that scan repository READMEs.
+-->
+<!--
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Agnes Video Generator",
+  "alternateName": "Free AI Video Generator",
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "Linux, macOS, Windows",
+  "description": "A completely free, open-source AI video generator. No subscription, no high-end GPU, no usage limits — type a text idea and get narrated, auto-subtitled multi-scene AI videos. Supports text-to-video, image-to-video, keyframes animation, digital anchor and manuscript-to-video.",
+  "url": "https://github.com/lcy362/agnes-video-generator",
+  "downloadUrl": "https://github.com/lcy362/agnes-video-generator",
+  "softwareVersion": "1.0.0",
+  "license": "https://opensource.org/licenses/MIT",
+  "keywords": "free AI video generator, AI video generation, text to video, AI video creator, open source video generator, AI narration, auto subtitles, multi-scene video, Runway alternative, Pika alternative",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "author": {
+    "@type": "Person",
+    "@id": "https://lichuanyang.top/#author",
+    "name": "SandGrid",
+    "alternateName": "lcy362",
+    "url": "https://lichuanyang.top/",
+    "sameAs": [
+      "https://github.com/lcy362",
+      "https://gitee.com/sandgrid/agnes-video-generator",
+      "https://video.lichuanyang.top/"
+    ]
+  }
+}
+</script>
+-->
+
 > **🌏 Mirror Notice / 镜像说明**
 > This project is also mirrored on [Gitee](https://gitee.com/sandgrid/agnes-video-generator) for faster access in mainland China. The **GitHub repository is the primary home** of this project — issues, PRs, and stars are managed there.
 > 本项目在国内 Gitee 设有镜像仓库，便于国内访问加速；**GitHub 为项目主仓库**，Issue / PR / Star 均在 GitHub 提交。
