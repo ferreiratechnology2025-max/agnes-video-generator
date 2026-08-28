@@ -259,18 +259,42 @@ class MultiScenePipeline(BasePipeline):
 
         self.task_manager.update_state(scenes=[s.model_dump() for s in scenes])
 
-        # Phase 2: 逐个等待
-        for j, (scene_idx, video_id, video_path) in enumerate(pending):
-            self._check_shutdown()
+        # Phase 2: 并发等待全部视频（优化路线图 1.3）
+        # 此前逐场景串行 wait_for_video，N 场景等待时长线性叠加；改为并行轮询
+        # （视频 API 本身异步），整体耗时 ≈ 最慢场景，随后逐个落盘并上报进度。
+        if pending:
             await self._emit(
                 "video_gen", "running",
-                f"等待视频 {j + 1}/{len(pending)}...",
-                0.40 + 0.35 * j / max(len(pending), 1),
+                f"等待 {len(pending)} 个视频生成...",
+                0.40,
             )
-            video_output = await self._wait_for_video_with_retry(video_id, scene_idx)
+
+        async def _wait_one(idx: int, vid: str):
+            out = await self._wait_for_video_with_retry(vid, idx)
+            return idx, out
+
+        done = await asyncio.gather(
+            *[_wait_one(i, vid) for i, vid, _ in pending],
+            return_exceptions=True,
+        )
+        # 任一场景失败 / 停止：立即穿透（保持 0.2 的停止即时性与异常语义）
+        for item in done:
+            if isinstance(item, BaseException):
+                raise item
+        results = dict(done)
+
+        # 逐个落盘 + 上报进度（保存为磁盘 IO，串行避免并发写）
+        for j, (scene_idx, video_id, video_path) in enumerate(pending):
+            self._check_shutdown()
+            video_output = results[scene_idx]
             await video_output.save(video_path)
             self._state.scenes[scene_idx].video_file = video_path
             self.task_manager.update_state(scenes=[s.model_dump() for s in self._state.scenes])
+            await self._emit(
+                "video_gen", "running",
+                f"保存视频 {j + 1}/{len(pending)}...",
+                0.40 + 0.35 * (j + 1) / max(len(pending), 1),
+            )
 
     async def _wait_for_video_with_retry(
         self, video_id: str, scene_idx: int, max_retries: int = 3
@@ -318,6 +342,7 @@ class MultiScenePipeline(BasePipeline):
                 text,
                 self._state.audio_config,
                 self._state.subtitle_config,
+                audio_path,
             )
 
         text = self._get_narration_text()

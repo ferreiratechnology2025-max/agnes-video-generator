@@ -33,13 +33,13 @@
 | 0.7 | `_key_id` 未哈希 data → 多 Key 按 id 删除失效 | 🔴 | 多 Key 场景删除单个 Key 不再误删 | 小 | ✅ |
 | 0.8 | 前端 `v-html` 未转义 → XSS | 🔴 | 后端可控字符串不再注入前端脚本 | 小 | ✅ |
 | 0.9 | 图片生成无重复提交守卫 | 🔴 | 快速连点不再并发重复提交扣费 | 小 | ✅ |
-| 1.1 | 任务状态单写者原则 | 🔴 | 停止/删除后磁盘状态不再回跳 | 中 | ⬜ |
-| 1.2 | 断点续传补全（cues 持久化等） | 🟡 | 长任务续传不再重采 TTS | 中 | ⬜ |
-| 1.3 | 并发等待 + 自适应轮询 | 🟡 | 多场景等待时延从线性叠加降为并行 | 中 | ⬜ |
-| 1.4 | 任务索引 + 列表接口性能 + 分页 | 🟡 | 任务查询从 O(N) 全扫降为 O(1) | 中 | ⬜ |
-| 1.5 | 产物与日志治理（sweep/error_logs/poetry 映射） | 🟡 | 长期运行工作区不再无限膨胀 | 小~中 | ⬜ |
-| 1.6 | 测试补齐（API 重试/并发/续传） | 🔴 | 批次 0 类 bug 从此有回归护栏 | 中 | ⬜ |
-| 1.7 | 前端轮询体验（退避/后台暂停/断连提示/竞态） | 🟡 | 服务异常时用户看得到原因；轮询不堆积 | 小~中 | ⬜ |
+| 1.1 | 任务状态单写者原则 | 🔴 | 停止/删除后磁盘状态不再回跳 | 中 | ✅ |
+| 1.2 | 断点续传补全（cues 持久化等） | 🟡 | 长任务续传不再重采 TTS | 中 | ✅ |
+| 1.3 | 并发等待 + 自适应轮询 | 🟡 | 多场景等待时延从线性叠加降为并行 | 中 | ✅ |
+| 1.4 | 任务索引 + 列表接口性能 + 分页 | 🟡 | 任务查询从 O(N) 全扫降为 O(1) | 中 | ✅ |
+| 1.5 | 产物与日志治理（sweep/error_logs/poetry 映射） | 🟡 | 长期运行工作区不再无限膨胀 | 小~中 | ✅ |
+| 1.6 | 测试补齐（API 重试/并发/续传） | 🔴 | 批次 0 类 bug 从此有回归护栏 | 中 | ✅ |
+| 1.7 | 前端轮询体验（退避/后台暂停/断连提示/竞态） | 🟡 | 服务异常时用户看得到原因；轮询不堆积 | 小~中 | ✅ |
 | 1.8 | i18n 拆分懒加载 + 检查脚本硬化 + 接 CI | 🔴 | 首屏 bundle 大幅瘦身，翻译缺失 CI 拦截 | 大 | ⬜ |
 | 2.1 | 成片合成链 ffmpeg 化（消除 3~4 遍重编码） | 🟡 | 合成阶段 3~10 倍提速 | 大 | ⬜ |
 | 2.2 | poetry 逐场景双份编码合并 | 🟡 | 诗词视频编码开销减半以上 | 中 | ⬜ |
@@ -435,6 +435,7 @@
 | 2026-08-26 | 0.6（部分） | `AGENTS.md` | 修正式文档化漂移：§6.2 多 Key/双桶现状、§6.6 音量系数 1.5、路线图引用路径更新 |
 | 2026-08-28 | 路线图 review 修订 | `docs/plans/v6.0/optimization_roadmap.md` | 修正 0.5 尾帧误判（移除该项，仅留水印坐标）；0.6 明确「完善已有 .env.example」；1.1 补崩溃兜底；1.4 补索引归属；2.1 补词级字幕取舍；2.3 补同步调用方兼容 + 除零边界；新增 0.7（`_key_id` 哈希）/0.8（前端 XSS）/0.9（图片重复提交）；前端新问题并入 1.7/3.1/3.4 |
 | 2026-08-28 | 批次 0 全部 9 项落地 | 0.1 `docker-run.sh`；0.2 `core/api/agnes_video.py`+`core/pipelines/{multi_scene,manuscript_video,anchor_video,creative/steps_video}.py`；0.3 `core/api/{agnes_video,agnes_image}.py`+`core/pipelines/__init__.py`+`utils/{video,image}.py`+6 个 pipeline（15 处 `await …save()`）；0.4 `web/deps.py`；0.5 `core/compositor/watermark.py`；0.6 完善 `.env.example`+`README.md`/`README_ZH.md`/`getting-started.md`；0.7 `web/routes/config_routes.py`；0.8 `frontend/src/composables/useProgress.ts`；0.9 `frontend/src/components/forms/SimpleForm.vue` | `py_compile` 全通过；370 单测 + 28 项 mock 回归全通过（7m39s）；`i18n_check` 通过；`vue-tsc --noEmit` + `vite build` 通过；端点冒烟（`/`、`/api/config`、`/api/tasks`、`/api/voices` 均 200）；`_key_id` 3 个 Key 各自精确命中；信号量 `acquire(4)` 失败后 `current` 保持 0 不变负 |
+| 2026-08-28 | 批次 1（1.1~1.7 落地；1.8 待办） | 1.1 复核确认（v6.0 P0/P1 已实现 per-task 锁 + 启动状态校正，本次补充验证）；1.2 `core/pipelines/__init__.py`（cues 序列化/落盘/读取）+ 5 个 pipeline 调用点；1.3 `core/api/agnes_video.py`（`_adaptive_poll_interval`）+`core/pipelines/multi_scene.py`（Phase 2 并发 gather）；1.4 `web/routes/task_routes.py`（`limit/offset/status` 分页）；1.5 `core/artifacts.py`（poetry 检查点映射）+`core/api/error_collector.py`（`_MAX_ERROR_LOGS` 轮转）+`task_routes.py`（sweep `protect` 参数）；1.6 新增 `tests/test_api_retry_matrix.py`（14 项，暴露并修复 KeyRing 429 换 Key 失效 bug）+`test_optimization_batch0.py`+`test_artifact_governance.py`+`test_cues_cache.py`+`test_task_list_pagination.py`；1.7 `useProgress.ts`/`useTasks.ts`/`ProgressPage.vue`/`TaskListPanel.vue`（in-flight 守卫、连续失败退避提示、`visibilitychange` 后台暂停、`loadList` 收敛裸 fetch） | `py_compile` 全通过；新增 5 个测试文件 41 项通过；`test_core`/`test_routes`/`test_server_app`/`test_pipeline_contract`/`test_manual_pause`/`test_creative_package` 全通过；`i18n_check` 通过（断连横幅复用既有 `connLost` key，未新增翻译）；`vue-tsc --noEmit` + `vite build` 通过 |
 
 ---
 

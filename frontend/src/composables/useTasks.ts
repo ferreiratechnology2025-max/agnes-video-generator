@@ -16,25 +16,50 @@ const { goProgress } = useNavigation()
 const tasks = ref<TaskListItem[]>([])
 const loading = ref(false)
 let taskListTimer: ReturnType<typeof setInterval> | null = null
+// 1.7：in-flight 守卫，避免慢请求下 5s 轮询请求堆积
+let listInFlight = false
 
 async function loadTaskList() {
+  // 1.7：in-flight 守卫 + loading 状态正确赋值（此前只在 catch 置 false，
+  // 正常路径从不置 true，loading 从未真正生效）
+  if (listInFlight) return
+  listInFlight = true
+  loading.value = true
   try {
     const d = await api.getTasks()
     tasks.value = d.tasks || []
   } catch (e) {
+    // 保留旧列表，不覆盖为失败态（轮询失败静默，下次重试）
+  } finally {
     loading.value = false
+    listInFlight = false
   }
 }
 
 function startTaskListTimer() {
   if (taskListTimer) return
   taskListTimer = setInterval(loadTaskList, 5000)
+  // 1.7：后台标签页暂停轮询，恢复可见时立即补一次
+  document.addEventListener('visibilitychange', handleTaskListVisibility)
 }
 
 function stopTaskListTimer() {
   if (taskListTimer) {
     clearInterval(taskListTimer)
     taskListTimer = null
+  }
+  document.removeEventListener('visibilitychange', handleTaskListVisibility)
+}
+
+function handleTaskListVisibility() {
+  if (document.hidden) {
+    if (taskListTimer) {
+      clearInterval(taskListTimer)
+      taskListTimer = null
+    }
+  } else {
+    loadTaskList()
+    startTaskListTimer()
   }
 }
 

@@ -4,7 +4,7 @@ import { t } from '@/i18n'
 import { useTasks } from '@/composables/useTasks'
 import type { TaskListItem } from '@/types'
 
-const { tasks, loading, viewTask, viewRunningTask, resumeTask, stopTaskById, deleteTaskById, switchMode } = useTasks()
+const { tasks, loading, loadTaskList, viewTask, viewRunningTask, resumeTask, stopTaskById, deleteTaskById, switchMode } = useTasks()
 
 async function toggleMode(task: TaskListItem) {
   const target = task.current_mode === 'manual' ? 'auto' : 'manual'
@@ -17,10 +17,9 @@ async function toggleMode(task: TaskListItem) {
 }
 
 function loadList() {
-  // useTasks 内部轮询 5s；此处立即刷新一次
-  void fetch('/api/tasks').then((r) => r.json()).then((d) => {
-    tasks.value = d.tasks || []
-  })
+  // useTasks 内部轮询 5s；此处立即刷新一次（1.7：收敛裸 fetch 到 useTasks，
+  // 复用 in-flight 守卫与错误处理）
+  void loadTaskList()
 }
 
 const statusColors: Record<string, string> = {

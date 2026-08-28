@@ -295,6 +295,7 @@ class PoetryVideoPipeline(MultiScenePipeline):
                 # 续传：音频已存在则仅重采该场景 cues，避免字幕退回纯文本估算
                 self._scene_sub_makers[idx] = await self._recover_sub_maker(
                     text, self._state.audio_config, self._state.subtitle_config,
+                    audio_path,
                 )
                 continue
 

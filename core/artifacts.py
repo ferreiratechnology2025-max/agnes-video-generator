@@ -918,6 +918,18 @@ def _checkpoint_to_step_field(checkpoint: str, state: BaseTaskState) -> Optional
             "final": "step_concatenation",
         }
         return mapping.get(checkpoint)
+    if isinstance(state, PoetryVideoTask):
+        # 优化路线图 1.5c：此前缺 poetry 分支，poetry 检查点状态恒为 pending，
+        # 级联删除的 approved_checkpoints 重置也因此失效。
+        mapping = {
+            "scenes": "step_build_scenes",
+            "references": "step_reference_images",
+            "videos": "step_video_generation",
+            "audio": "step_audio",
+            "subtitle": "step_subtitle",
+            "final": "step_concatenation",
+        }
+        return mapping.get(checkpoint)
     return None
 
 

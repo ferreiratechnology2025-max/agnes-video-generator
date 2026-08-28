@@ -265,6 +265,7 @@ class AudioStepsMixin:
             return await self._recover_sub_maker(
                 narration_text,
                 self._state.audio_config, self._state.subtitle_config,
+                combined_audio,
             )
 
         audio_enabled = self._state.audio_config.enabled

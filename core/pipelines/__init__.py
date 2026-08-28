@@ -9,12 +9,51 @@ import logging
 import os
 import subprocess
 from abc import ABC, abstractmethod
+from types import SimpleNamespace
 from typing import Callable, List, Optional
 
 from core.compositor.watermark import add_watermark, detect_language
 from core.config import get_watermark_config
 from core.task_manager import TaskManager
 from models.task import AudioConfig, BaseTaskState, StepStatus, SubtitleConfig, SubtitleStyle
+
+
+# ── 优化路线图 1.2：词级 cues 持久化（续传免重采 TTS） ───────────────
+# 生成音频时把 edge_tts SubMaker.cues（词级时间戳）序列化落盘到
+# ``{音频路径}.cues.json``；续传时音频文件已存在、TTS 步骤被跳过时
+# 直接读取缓存，避免重新消费 TTS 流采集 cues（10 分钟长稿件可省等量网络时间）。
+
+
+def _cues_cache_path(audio_path: str) -> str:
+    """cues 缓存文件路径（与音频文件同目录、同名加后缀）。"""
+    return audio_path + ".cues.json"
+
+
+def _serialize_sub_maker(sub_maker) -> list:
+    """把 SubMaker.cues 序列化为 JSON 友好的列表（start/end 存秒）。"""
+    if sub_maker is None or not getattr(sub_maker, "cues", None):
+        return []
+    out = []
+    for cue in sub_maker.cues:
+        try:
+            start = cue.start
+            end = cue.end
+            out.append({
+                "start": start.total_seconds() if hasattr(start, "total_seconds") else float(start),
+                "end": end.total_seconds() if hasattr(end, "total_seconds") else float(end),
+                "content": (cue.content or "").strip(),
+            })
+        except (AttributeError, TypeError):
+            continue
+    return out
+
+
+def _deserialize_sub_maker(raw: list) -> Optional[object]:
+    """还原 cues 缓存为消费方兼容的对象（含 .cues，每项含 start/end/content）。"""
+    items = [SimpleNamespace(**c) for c in raw if c.get("content")]
+    if not items:
+        return None
+    return SimpleNamespace(cues=items)
 
 logger = logging.getLogger(__name__)
 
@@ -562,22 +601,37 @@ class BasePipeline(ABC):
             raise PipelineShutdown("Pipeline shutdown requested")
 
     async def _recover_sub_maker(
-        self, narration_text: str, audio_config, subtitle_config
+        self, narration_text: str, audio_config, subtitle_config, audio_path: str = ""
     ) -> object:
-        """音频文件已存在、TTS 步骤被跳过时，若字幕需要 cues 则仅重新采集 cues。
+        """恢复词级 cues（优化路线图 1.2：续传免重采 TTS）。
 
         续传场景下 ``_step_audio`` 常因音频文件已存在而跳过，导致 ``sub_maker``
-        丢失，进而字幕退回 legacy 启发式（v2.0 cue 精确对齐失效）。此方法在不重新
-        生成音频字节的前提下，仅消费 TTS 流采集 WordBoundary cues，恢复精确时间线。
+        丢失，进而字幕退回 legacy 启发式（v2.0 cue 精确对齐失效）。
+
+        1.2 起生成音频时会随写 ``{音频路径}.cues.json`` 缓存：本方法优先读取
+        缓存（零网络开销），仅缓存缺失（旧产物）时才回退重新消费 TTS 流采集
+        cues。
+
+        Args:
+            audio_path: 对应音频文件路径；提供时优先读 ``.cues.json`` 缓存。
 
         Returns:
-            SubMaker cues 对象；不需要或失败时返回 None。
+            cues 兼容对象（含 ``.cues``）；不需要或失败时返回 None。
         """
         if not narration_text:
             return None
         use_cue = getattr(subtitle_config, "use_cue_timeline", True)
         if not (getattr(subtitle_config, "enabled", False) and use_cue):
             return None
+        # 1.2：优先读缓存，免重新消费 TTS 流
+        if audio_path:
+            restored = self._load_cues_cache(audio_path)
+            if restored is not None:
+                logger.info(
+                    "[Subtitle] recovered sub_maker from cues cache: %s",
+                    _cues_cache_path(audio_path),
+                )
+                return restored
         try:
             from core.audio.tts import EdgeTTSEngine
             return await EdgeTTSEngine().harvest_cues(
@@ -588,6 +642,30 @@ class BasePipeline(ABC):
         except RuntimeError as e:
             logger.warning("[Subtitle] recover sub_maker via harvest_cues failed: %s", e)
             return None
+
+    def _load_cues_cache(self, audio_path: str) -> Optional[object]:
+        """读取音频旁路的 cues 缓存并还原为消费方兼容对象（1.2）。"""
+        try:
+            cache = _cues_cache_path(audio_path)
+            if not os.path.exists(cache):
+                return None
+            with open(cache, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            return _deserialize_sub_maker(raw)
+        except Exception as e:
+            logger.warning("[Subtitle] load cues cache failed: %s", e)
+            return None
+
+    def _save_cues_cache(self, audio_path: str, sub_maker) -> None:
+        """把词级 cues 落盘到 ``{audio_path}.cues.json``（1.2）。"""
+        try:
+            cues = _serialize_sub_maker(sub_maker)
+            if not cues:
+                return
+            with open(_cues_cache_path(audio_path), "w", encoding="utf-8") as f:
+                json.dump(cues, f, ensure_ascii=False)
+        except Exception as e:
+            logger.warning("[Subtitle] save cues cache failed: %s", e)
 
     async def _generate_audio_with_fallback(
         self,
@@ -662,6 +740,8 @@ class BasePipeline(ABC):
                         output_path,
                     )
                     return None
+                # 1.2：cues 随音频落盘，续传免重采
+                self._save_cues_cache(output_path, sub_maker)
                 return sub_maker
             except RuntimeError as e:
                 logger.warning("[Audio] EdgeTTS failed, falling back to silent: %s", e)
@@ -685,6 +765,9 @@ class BasePipeline(ABC):
                 text=text, output_path=output_path,
                 **({"duration_sec": duration_sec} if duration_sec else {}),
             )
+            # 1.2：路径 B（音频关+字幕开）也随音频落盘 cues，供续传读取
+            if sub_maker is not None:
+                self._save_cues_cache(output_path, sub_maker)
             return sub_maker
 
         # 其他（音频关 / 不采集 cues）→ Silent 落盘

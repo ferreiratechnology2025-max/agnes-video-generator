@@ -37,6 +37,18 @@ DURATION_PRESETS = {
 _UPLOAD_RETRY_BASE_DELAY_SECONDS = 30
 
 
+def _adaptive_poll_interval(interval: int, poll_count: int) -> int:
+    """优化路线图 1.3：自适应轮询间隔。
+
+    此前固定 ``interval``（默认 60s），每个视频平均多等 ~30s 检测延迟。
+    现改为 20s 起步，每 5 次轮询 +5s，上限为调用方 ``interval``；
+    调用方传小间隔（<20，如测试）时保持原样。
+    """
+    if interval < 20:
+        return interval
+    return min(interval, 20 + (poll_count // 5) * 5)
+
+
 class VideoTaskCancelled(RuntimeError):
     """用户停止任务导致的取消（优化路线图 0.2）。
 
@@ -375,7 +387,8 @@ class AgnesVideoAPI:
                     )
                     raise RuntimeError(error_msg)
 
-            await asyncio.sleep(interval)
+            # 优化路线图 1.3：自适应轮询间隔（20s 起步，每 5 次 +5s，上限 interval）
+            await asyncio.sleep(_adaptive_poll_interval(interval, poll_count))
 
     async def _submit_with_retry(self, payload: dict, mode_desc: str) -> str:
         frame_reductions_left = 2  # allow up to 2 frame-count reductions on 400
