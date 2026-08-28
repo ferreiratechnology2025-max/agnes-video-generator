@@ -26,6 +26,22 @@ permissions:
   contents: read
 
 jobs:
+  i18n-check:
+    # 1.8：多语言完整性前置检查（en 缺失硬阻断返回 2，其余语言缺失/占位符
+    # 不一致列出提醒返回 1；与回归脚本回归前置门槛同一脚本）
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run i18n completeness check
+        run: python scripts/i18n_check.py
+
   test:
     runs-on: ubuntu-latest
     # 如需验证多版本兼容性，把 python-version 改为矩阵即可，例如：

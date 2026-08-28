@@ -40,7 +40,7 @@
 | 1.5 | 产物与日志治理（sweep/error_logs/poetry 映射） | 🟡 | 长期运行工作区不再无限膨胀 | 小~中 | ✅ |
 | 1.6 | 测试补齐（API 重试/并发/续传） | 🔴 | 批次 0 类 bug 从此有回归护栏 | 中 | ✅ |
 | 1.7 | 前端轮询体验（退避/后台暂停/断连提示/竞态） | 🟡 | 服务异常时用户看得到原因；轮询不堆积 | 小~中 | ✅ |
-| 1.8 | i18n 拆分懒加载 + 检查脚本硬化 + 接 CI | 🔴 | 首屏 bundle 大幅瘦身，翻译缺失 CI 拦截 | 大 | ⬜ |
+| 1.8 | i18n 拆分懒加载 + 检查脚本硬化 + 接 CI | 🔴 | 首屏 bundle 大幅瘦身，翻译缺失 CI 拦截 | 大 | ✅ |
 | 2.1 | 成片合成链 ffmpeg 化（消除 3~4 遍重编码） | 🟡 | 合成阶段 3~10 倍提速 | 大 | ⬜ |
 | 2.2 | poetry 逐场景双份编码合并 | 🟡 | 诗词视频编码开销减半以上 | 中 | ⬜ |
 | 2.3 | 限速器异步化 + 编码专用线程池 | 🟡 | 停止即时响应限速等待；线程池不再饥饿 | 中 | ⬜ |
@@ -257,6 +257,14 @@
 2. 切换语言功能与现状一致（22 语言抽查）。
 3. CI 中人为删除一个 en key 被拦截。
 
+**落地记录（2026-08-28）**：
+- `translations.ts`（6035 行 / 615KB）拆为 `frontend/src/i18n/langs/{lang}.json` 22 个文件（zh 基准 554 keys，全部语言 key 集合完整覆盖）；
+- `index.ts` 改为 `zh/en` 静态预载 + `import.meta.glob` 动态加载其余 20 语言（每个语言独立 chunk）；
+- `i18n_check.py` 硬化：JSON diff 校验 + 占位符 `{xxx}` 一致性 + en 与 zh 相同可疑项提醒 + **en 缺失硬阻断（返回码 2）**、其余语言缺失返回 1、占位符/可疑仅提醒；
+- `.github/workflows/test.yml` 新增独立 `i18n-check` job；
+- 实测：主 bundle `721 kB → 305 kB`（gzip `226 kB → 97 kB`，**-58%**），20 个语言 chunk 各 ~30-38 kB（按需加载）；
+- 现存可疑未翻译项（仅提醒）：`keySrcConfig`（en 与 zh 相同）。
+
 ---
 
 ## 批次 2 — 性能
@@ -436,6 +444,7 @@
 | 2026-08-28 | 路线图 review 修订 | `docs/plans/v6.0/optimization_roadmap.md` | 修正 0.5 尾帧误判（移除该项，仅留水印坐标）；0.6 明确「完善已有 .env.example」；1.1 补崩溃兜底；1.4 补索引归属；2.1 补词级字幕取舍；2.3 补同步调用方兼容 + 除零边界；新增 0.7（`_key_id` 哈希）/0.8（前端 XSS）/0.9（图片重复提交）；前端新问题并入 1.7/3.1/3.4 |
 | 2026-08-28 | 批次 0 全部 9 项落地 | 0.1 `docker-run.sh`；0.2 `core/api/agnes_video.py`+`core/pipelines/{multi_scene,manuscript_video,anchor_video,creative/steps_video}.py`；0.3 `core/api/{agnes_video,agnes_image}.py`+`core/pipelines/__init__.py`+`utils/{video,image}.py`+6 个 pipeline（15 处 `await …save()`）；0.4 `web/deps.py`；0.5 `core/compositor/watermark.py`；0.6 完善 `.env.example`+`README.md`/`README_ZH.md`/`getting-started.md`；0.7 `web/routes/config_routes.py`；0.8 `frontend/src/composables/useProgress.ts`；0.9 `frontend/src/components/forms/SimpleForm.vue` | `py_compile` 全通过；370 单测 + 28 项 mock 回归全通过（7m39s）；`i18n_check` 通过；`vue-tsc --noEmit` + `vite build` 通过；端点冒烟（`/`、`/api/config`、`/api/tasks`、`/api/voices` 均 200）；`_key_id` 3 个 Key 各自精确命中；信号量 `acquire(4)` 失败后 `current` 保持 0 不变负 |
 | 2026-08-28 | 批次 1（1.1~1.7 落地；1.8 待办） | 1.1 复核确认（v6.0 P0/P1 已实现 per-task 锁 + 启动状态校正，本次补充验证）；1.2 `core/pipelines/__init__.py`（cues 序列化/落盘/读取）+ 5 个 pipeline 调用点；1.3 `core/api/agnes_video.py`（`_adaptive_poll_interval`）+`core/pipelines/multi_scene.py`（Phase 2 并发 gather）；1.4 `web/routes/task_routes.py`（`limit/offset/status` 分页）；1.5 `core/artifacts.py`（poetry 检查点映射）+`core/api/error_collector.py`（`_MAX_ERROR_LOGS` 轮转）+`task_routes.py`（sweep `protect` 参数）；1.6 新增 `tests/test_api_retry_matrix.py`（14 项，暴露并修复 KeyRing 429 换 Key 失效 bug）+`test_optimization_batch0.py`+`test_artifact_governance.py`+`test_cues_cache.py`+`test_task_list_pagination.py`；1.7 `useProgress.ts`/`useTasks.ts`/`ProgressPage.vue`/`TaskListPanel.vue`（in-flight 守卫、连续失败退避提示、`visibilitychange` 后台暂停、`loadList` 收敛裸 fetch） | `py_compile` 全通过；新增 5 个测试文件 41 项通过；`test_core`/`test_routes`/`test_server_app`/`test_pipeline_contract`/`test_manual_pause`/`test_creative_package` 全通过；`i18n_check` 通过（断连横幅复用既有 `connLost` key，未新增翻译）；`vue-tsc --noEmit` + `vite build` 通过 |
+| 2026-08-28 | 批次 1.8 落地 | `frontend/src/i18n/translations.ts`（删除）→ `langs/{lang}.json` 22 个；`frontend/src/i18n/index.ts`（`zh/en` 静态预载 + `import.meta.glob` 动态加载）；`scripts/i18n_check.py`（JSON diff + 占位符 + en 硬阻断 2/其他缺失 1）；`.github/workflows/test.yml`（`i18n-check` job）；`AGENTS.md` 文案规范同步 | 主 bundle `721 kB → 305 kB`（gzip `226 kB → 97 kB`，-58%）；20 个语言 chunk 30-38 kB 按需加载；`i18n_check` 通过（仅提醒 `keySrcConfig` en 同 zh）；`vue-tsc --noEmit` + `vite build` 通过；`regression_runner` i18n 前置门槛兼容（返回码语义 0/1/2） |
 
 ---
 
