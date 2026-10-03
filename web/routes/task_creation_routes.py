@@ -393,6 +393,7 @@ async def create_manuscript_task(
     # v6.0 手动模式
     execution_mode: str = Form("auto"),
     pause_points: str = Form(""),
+    webhook_url: str = Form(""),
 ):
     """创建稿件长视频任务（类型 3）。"""
     api_key = get_api_key()
@@ -473,7 +474,10 @@ async def create_manuscript_task(
         manual_config=_build_manual_config(execution_mode, pause_points),
     )
 
-    pipeline = deps.create_pipeline_for_type(TaskType.MANUSCRIPT, api_key, task_id, dir_name)
+    pipeline = deps.create_pipeline_for_type(
+        TaskType.MANUSCRIPT, api_key, task_id, dir_name,
+        webhook_url=webhook_url.strip() if webhook_url else None,
+    )
     app_state.active_pipelines[task_id] = pipeline
 
     tm = TaskManager(task_id, dir_name=dir_name)

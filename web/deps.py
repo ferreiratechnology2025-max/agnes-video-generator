@@ -30,6 +30,7 @@ def create_pipeline_for_type(
     api_key: str,
     task_id: str,
     dir_name: str,
+    webhook_url: str = None,
 ) -> BasePipeline:
     """根据任务类型创建对应的 Pipeline 实例。
 
@@ -61,6 +62,7 @@ def create_pipeline_for_type(
             image_model=image_model,
             video_model=video_model,
             shutdown_event=shutdown_event,
+            webhook_url=webhook_url,
         )
     elif task_type == TaskType.ANCHOR:
         return AnchorPipeline(

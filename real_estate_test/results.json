@@ -1,0 +1,56 @@
+[
+  {
+    "file": "01_fachada_i2v_v20_try1.mp4",
+    "source": "01.jpeg",
+    "category": "fachada",
+    "duration": 5,
+    "seed": null,
+    "status": "GENERATED",
+    "reason": "Video generated successfully"
+  },
+  {
+    "file": "02_sala_i2v_v20_try1.mp4",
+    "source": "03.jpeg",
+    "category": "sala",
+    "duration": 5,
+    "seed": null,
+    "status": "GENERATED",
+    "reason": "Video generated successfully"
+  },
+  {
+    "file": "03_cozinha_i2v_v20_try1.mp4",
+    "source": "05.jpeg",
+    "category": "cozinha",
+    "duration": 5,
+    "seed": null,
+    "status": "GENERATED",
+    "reason": "Video generated successfully"
+  },
+  {
+    "file": "04_suite_i2v_v20_try1.mp4",
+    "source": "11.jpeg",
+    "category": "suite",
+    "duration": 5,
+    "seed": null,
+    "status": "GENERATED",
+    "reason": "Video generated successfully"
+  },
+  {
+    "file": "05_piscina_i2v_v20_try1.mp4",
+    "source": "20.jpeg",
+    "category": "piscina",
+    "duration": 5,
+    "seed": null,
+    "status": "GENERATED",
+    "reason": "Video generated successfully"
+  },
+  {
+    "file": "06_paisagismo_i2v_v20_try1.mp4",
+    "source": "04.jpeg",
+    "category": "paisagismo",
+    "duration": 5,
+    "seed": null,
+    "status": "GENERATED",
+    "reason": "Video generated successfully"
+  }
+]

@@ -21,6 +21,11 @@ from core.audio.voices import duration_len, estimate_chars_per_sec
 from core.compositor.concatenator import VideoConcatenator
 from core.pipelines import MultiScenePipeline
 from core.screenwriter import Screenwriter, is_prompt_language_explicit
+from core.screenwriter.vimax_brain import ViMaxBrain
+from core.db.state_manager import StateManager, get_state_manager
+
+from core.compositor.processor import VideoProcessor
+from core.utils.r2_uploader import get_r2_uploader, is_r2_available
 from models.task import (
     ManuscriptParagraph,
     SceneTask,
@@ -127,6 +132,21 @@ _PROGRESS_AUDIO_START = 0.60
 _PROGRESS_SUBTITLE_START = 0.75
 _PROGRESS_CONCAT_START = 0.80
 
+# ── ViMax Brain toggle: set AGNES_VIMAX_BRAIN=1 in .env to enable the
+# structured storyboard engine.  When disabled the legacy split_manuscript_text
+# path is used (backwards-compatible).
+_VIMAX_BRAIN_ENABLED = (
+    os.environ.get('AGNES_VIMAX_BRAIN', '').strip().lower() in ('1', 'true', 'yes')
+)
+# ── I2V tunnel toggle: set AGNES_VIMAX_I2V_TUNNEL=1 to chain scenes via R2.
+# When enabled and R2 creds are present, each scene's last frame is uploaded to
+# R2 and injected as the reference image for the next scene (strictly sequential
+# generation).  Falls back to the legacy parallel path when disabled.
+_VIMAX_I2V_TUNNEL_ENABLED = (
+    os.environ.get('AGNES_VIMAX_I2V_TUNNEL', '').strip().lower() in ('1', 'true', 'yes')
+)
+
+
 
 class ManuscriptVideoPipeline(MultiScenePipeline):
     """稿件长视频生成流水线。
@@ -149,14 +169,75 @@ class ManuscriptVideoPipeline(MultiScenePipeline):
         video_model: str = "agnes-video-v2.0",
         progress_callback: Optional[Callable] = None,
         shutdown_event: Optional[asyncio.Event] = None,
+        webhook_url: str = None,
     ):
         super().__init__(api_key, task_id, dir_name, progress_callback, shutdown_event)
+        self._webhook_url = webhook_url
         self.video_api = AgnesVideoAPI(api_key=api_key, model=video_model)
         self.video_api.shutdown_event = shutdown_event
         # PRD 1.4：Screenwriter language pinning——默认 en、尊重显式配置
         # （未显式设置 PROMPT_LANGUAGE 时固定 en，修复非中文稿件被写成中文的问题）。
         _sw_language = None if is_prompt_language_explicit() else "en"
         self.screenwriter = Screenwriter(api_key=api_key, model=chat_model, language=_sw_language)
+
+        # State manager: persistent SQLite tracking for worker daemon resume
+        self._state_manager = None
+        try:
+            self._state_manager = get_state_manager()
+            self._state_manager.create_task(task_id, "manuscript",
+                                             webhook_url=self._webhook_url or "")
+        except Exception as e:
+            logger.warning("[Manuscript] StateManager init failed (%s); continuing without persistence", e)
+
+        # ViMax Brain: optional structured storyboard engine (env AGNES_VIMAX_BRAIN=1).
+        self.vimax_brain: ViMaxBrain | None = None
+        if _VIMAX_BRAIN_ENABLED:
+            try:
+                self.vimax_brain = ViMaxBrain(api_key=api_key, model=chat_model)
+                logger.info("[Manuscript] ViMax Brain enabled for task %s", task_id)
+            except Exception as e:
+                logger.warning("[Manuscript] ViMax Brain init failed (%s); falling back to legacy split", e)
+
+        # ViMax I2V tunnel: optional sequential chaining via R2 (AGNES_VIMAX_I2V_TUNNEL=1).
+        self._i2v_tunnel_enabled = (
+            _VIMAX_I2V_TUNNEL_ENABLED and is_r2_available()
+        )
+        if self._i2v_tunnel_enabled:
+            logger.info("[Manuscript] I2V tunnel ENABLED for task %s", task_id)
+        else:
+            logger.info(
+                "[Manuscript] I2V tunnel disabled (vimax=%s, i2v_tunnel=%s, r2_avail=%s)",
+                _VIMAX_BRAIN_ENABLED, _VIMAX_I2V_TUNNEL_ENABLED, is_r2_available(),
+            )
+        # AGNES_MOCK_API=1: swap the real video API for a local mock
+        # that generates fake MP4s so the full I2V tunnel flow can be audited
+        # without hitting an unstable Agnes backend.
+        # Reads from os.environ first, falls back to .env via dotenv.
+        _mock_env = os.environ.get('AGNES_MOCK_API', '').strip().lower()
+        if not _mock_env:
+            try:
+                from dotenv import dotenv_values
+                _dot_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                    '.env',
+                )
+                _mock_env = (dotenv_values(_dot_path).get('AGNES_MOCK_API', '') or '').strip().lower()
+            except Exception:
+                pass
+        _mock_api = _mock_env in ('1', 'true', 'yes')
+        if _mock_api:
+            try:
+                from core.api.agnes_video_mock import AgnesVideoAPIMock
+                self.video_api = AgnesVideoAPIMock(
+                    api_key=api_key,
+                    model=video_model,
+                    sleep_seconds=3.0,
+                    video_width=self._state.video_width if hasattr(self, '_state') else 768,
+                    video_height=self._state.video_height if hasattr(self, '_state') else 1152,
+                )
+                logger.info("[Manuscript] Mock API enabled (AGNES_MOCK_API=1)")
+            except Exception as e:
+                logger.warning("[Manuscript] Mock API init failed (%s); using real API", e)
 
     # ------------------------------------------------------------------
     # 模板钩子：数据来源
@@ -166,23 +247,33 @@ class ManuscriptVideoPipeline(MultiScenePipeline):
         return self._state.manuscript_text
 
     async def _build_scenes(self) -> None:
-        """构建场景列表：拆段 → 生成场景 prompt → 填充 self._state.scenes。
+        """构建场景列表：ViMax Brain storyboard -> paragraphs -> scene_prompt。
 
         支持 resume：若 paragraphs 已存在则复用，仅补全缺失的 scene_prompt。
+        启用 AGNES_VIMAX_BRAIN=1 时通过 ViMaxBrain 生成结构化 storyboard；
+        否则回退到 legacy split_manuscript_text + LLM scene prompt 路径。
         """
         # resume：若 paragraphs 已存在（如中途续传），直接复用
         if not self._state.paragraphs:
-            paragraphs = self._split_text(self._state.manuscript_text)
-            self._state.paragraphs = paragraphs
-            self.task_manager.update_state(paragraphs=paragraphs)
+            if self.vimax_brain is not None:
+                logger.info("[Manuscript] _build_scenes: using ViMax Brain storyboard")
+                paragraphs = await self._build_scenes_with_vimax(self._state.manuscript_text)
+                self._state.paragraphs = paragraphs
+                self.task_manager.update_state(paragraphs=paragraphs)
+                # ViMax 已同时产出 scene_prompt，跳过 _generate_scene_prompts
+            else:
+                paragraphs = self._split_text(self._state.manuscript_text)
+                self._state.paragraphs = paragraphs
+                self.task_manager.update_state(paragraphs=paragraphs)
         else:
             logger.info(
                 "[Manuscript] _build_scenes: reuse %d existing paragraphs",
                 len(self._state.paragraphs),
             )
 
-        # 为缺失 scene_prompt 的段落生成视频描述
-        await self._generate_scene_prompts(self._state.paragraphs)
+        # 为缺失 scene_prompt 的段落生成视频描述（legacy 路径；ViMax 路径已跳过）
+        if not self.vimax_brain:
+            await self._generate_scene_prompts(self._state.paragraphs)
 
         # 逐段参考图：越界 index（超出实际拆段结果）记 warning 并忽略该图，不阻断
         if self._state.reference_images:
@@ -211,6 +302,68 @@ class ManuscriptVideoPipeline(MultiScenePipeline):
             for p in self._state.paragraphs
         ]
         self.task_manager.update_state(scenes=[s.model_dump() for s in self._state.scenes])
+
+    async def _build_scenes_with_vimax(self, text: str) -> List[ManuscriptParagraph]:
+        """ViMax Brain 路径：调用 LLM 生成结构化 storyboard，转回 ManuscriptParagraph。
+
+        Args:
+            text: Raw manuscript text.
+
+        Returns:
+            List[ManuscriptParagraph] with text=narration_text and
+            scene_prompt=concatenated ViMax fields.
+        """
+        try:
+            scenes = self.vimax_brain.generate_storyboard(
+                text,
+                style=self._state.style or "",
+                min_scenes=2,
+                max_scenes=8,
+            )
+        except Exception as e:
+            logger.warning(
+                "[Manuscript] ViMaxBrain.generate_storyboard failed (%s); "
+                "falling back to legacy split", e, exc_info=True,
+            )
+            # Graceful fallback: revert to legacy split to avoid task failure
+            return self._split_text_legacy(text)
+
+        paragraphs = self.vimax_brain.to_paragraphs(scenes)
+        # Persist scenes in StateManager for worker resume
+        if self._state_manager:
+            for p in paragraphs:
+                self._state_manager.create_scene(
+                    self.task_id, p.index,
+                    enhanced_prompt=p.scene_prompt or "",
+                    narration_text=p.text or "",
+                )
+        logger.info(
+            "[Manuscript] ViMaxBrain produced %d scenes from %d chars",
+            len(paragraphs), len(text),
+        )
+        # Log each paragraph's enhanced prompt (truncated) for dry-run verification.
+        for p in paragraphs:
+            logger.info(
+                "[Manuscript] Paragraph %d: text=%r... enhanced_prompt=%r...",
+                p.index, p.text[:40], p.scene_prompt[:60],
+            )
+        return paragraphs
+
+    def _split_text_legacy(self, text: str) -> List[ManuscriptParagraph]:
+        """Legacy fallback: split manuscript text with the original algorithm."""
+        final_texts = split_manuscript_text(text)
+        if not final_texts:
+            logger.warning("[Manuscript] split_text: no sentences found in text")
+            return []
+        chars_per_sec = estimate_chars_per_sec(text)
+        paragraphs: List[ManuscriptParagraph] = []
+        for idx, para_text in enumerate(final_texts):
+            paragraphs.append(ManuscriptParagraph(index=idx, text=para_text))
+            logger.info(
+                "[Manuscript] Legacy Paragraph %d: %d chars, ~%.1fs",
+                idx, len(para_text), duration_len(para_text) / chars_per_sec,
+            )
+        return paragraphs
 
     async def _build_reference_images(self) -> None:
         """稿件参考图阶段：参考图在任务创建时已上传并映射到段落，
@@ -335,7 +488,15 @@ class ManuscriptVideoPipeline(MultiScenePipeline):
 
         每段视频保存到 ``{working_dir}/para_{index}/video.mp4``，
         同时记录 video_id 和 curl 命令到 ``task.json`` / ``curl.sh``。
+
+        Phase 3: when the I2V tunnel is enabled (``self._i2v_tunnel_enabled``),
+        dispatches to ``_generate_videos_sequential`` instead.
         """
+        if getattr(self, "_i2v_tunnel_enabled", False):
+            logger.info("[I2VTunnel] Dispatching to sequential I2V flow")
+            await self._generate_videos_sequential()
+            return
+
         _SUBMIT_RETRIES = 3
         _WAIT_RETRIES = 3
         paragraphs = self._state.paragraphs
@@ -447,6 +608,241 @@ class ManuscriptVideoPipeline(MultiScenePipeline):
                 "[Manuscript] video: paragraph %d saved → %s (video_id=%s)",
                 para_idx, video_path, video_id[:16],
             )
+
+    async def _generate_videos_sequential(self) -> None:
+        """Phase 3: strictly-sequential I2V generation with R2 tunnel.
+
+        Flow:
+            0. Scene 0 → T2V (no reference image).
+            1. After scene N download: extract last frame → upload R2 →
+               capture public URL as the reference for scene N+1.
+            2. Scene N+1 submitted in ``reference`` mode (I2V) with that URL.
+            3. When scene N+1 reaches ``completed``, the scene N R2 object is
+               purged (AGNES_R2_CLEANUP=1).
+            4. Repeat until the last scene; at the very end, ``cleanup_all``
+               purges any dangling frames.
+        """
+        _SUBMIT_RETRIES = 3
+        _WAIT_RETRIES = 3
+        paragraphs = self._state.paragraphs
+        total = len(paragraphs)
+
+        from core.utils.r2_uploader import get_r2_uploader
+        from core.db.state_manager import get_state_manager
+        uploader = get_r2_uploader()
+        sm = get_state_manager() if self._state_manager else None
+        logger.info("[I2VTunnel] sm=%s _state_manager=%s", type(sm).__name__, type(self._state_manager).__name__)
+        if uploader is None:
+            logger.warning(
+                "[I2VTunnel] Enabled in env but no R2 creds available; "
+                "falling back to T2V-only sequential (no continuity)."
+            )
+
+        pending_ref_for_next = None
+        consumed_keys: dict[int, str] = {}
+
+        try:
+            for i, para in enumerate(paragraphs):
+                self._check_shutdown()
+
+                para_dir = os.path.join(self.working_dir, f"para_{para.index}")
+                video_path = os.path.join(para_dir, "video.mp4")
+                last_frame_path = os.path.join(para_dir, "last_frame.jpg")
+
+                # Resume: video already on disk → skip submit, still extract frame.
+                if os.path.exists(video_path):
+                    para.video_file = video_path
+                    logger.info(
+                        "[I2VTunnel] Scene %d video reused (%s); extracting frame",
+                        i, video_path,
+                    )
+                    self._extract_last_frame(video_path, last_frame_path)
+                    # Check for previously-stored R2 URL (resume support).
+                    stored = self._load_task_json(para_dir) or {}
+                    pending_ref_for_next = stored.get("r2_url")
+                    logger.info(
+                        "[I2VTunnel] Scene %d resume: r2_url=%s",
+                        i, pending_ref_for_next,
+                    )
+                    continue
+
+                if not para.scene_prompt:
+                    logger.warning(
+                        "[I2VTunnel] Scene %d has no scene_prompt, skipping", i,
+                    )
+                    continue
+
+                os.makedirs(para_dir, exist_ok=True)
+
+                saved_video_id = self._load_task_json(para_dir)
+                if saved_video_id:
+                    para.video_id = saved_video_id
+                else:
+                    # Decide reference images: scene 0 → [] (T2V).
+                    # scene N>0 → [pending_ref_for_next] if tunnel live.
+                    reference_image_paths: list = []
+                    if i > 0 and pending_ref_for_next:
+                        reference_image_paths.append(pending_ref_for_next)
+
+                    para_duration = max(
+                        int(math.ceil(
+                            duration_len(para.text) / estimate_chars_per_sec(para.text)
+                        )), 3,
+                    )
+                    _scene_event = "scene_%d_i2v" % i if reference_image_paths else "scene_%d_t2v" % i
+                    if sm:
+                        sm.advance(self.task_id, i, _scene_event)
+                    logger.info(
+                        "[I2VTunnel] Scene %d: submitting (%s, ref=%s, dur=%ds)",
+                        i,
+                        "i2v" if reference_image_paths else "t2v",
+                        reference_image_paths[0][:80] if reference_image_paths else "—",
+                        para_duration,
+                    )
+                    await self._emit(
+                        "video_gen", "running",
+                        f"提交视频 {i + 1}/{total}",
+                        _PROGRESS_SUBMIT_START + _PROGRESS_SUBMIT_SPAN * (i / max(total, 1)),
+                    )
+                    for retry in range(_SUBMIT_RETRIES):
+                        try:
+                            video_id = await self.video_api.submit_video(
+                                prompt=para.scene_prompt,
+                                reference_image_paths=reference_image_paths,
+                                duration=para_duration,
+                                width=self._state.video_width,
+                                height=self._state.video_height,
+                            )
+                            para.video_id = video_id
+                            self._save_task_json(para_dir, {"video_id": video_id})
+                            break
+                        except Exception as e:
+                            if retry < _SUBMIT_RETRIES - 1:
+                                delay = _SUBMIT_RETRY_INTERVAL_BASE_SECONDS * (retry + 1)
+                                logger.warning(
+                                    "[I2VTunnel] Scene %d submit failed (%s), "
+                                    "retry %d/%d in %ds...",
+                                    i, e, retry + 1, _SUBMIT_RETRIES, delay,
+                                )
+                                await asyncio.sleep(delay)
+                            else:
+                                # Hard 503 after exhausting retries — suspend for backoff
+                                logger.error(
+                                    "[I2VTunnel] Scene %d hard 503 after %d retries, suspending",
+                                    i, _SUBMIT_RETRIES,
+                                )
+                                if sm:
+                                    sm.suspend_for_503(self.task_id, delay_minutes=5)
+                                raise
+                    saved_video_id = para.video_id
+
+                # ── poll to completion ──
+                for retry in range(_WAIT_RETRIES):
+                    try:
+                        output = await self.video_api.wait_for_video(saved_video_id)
+                        await output.save(video_path)
+                        break
+                    except VideoTaskCancelled:
+                        raise
+                    except Exception as e:
+                        if retry < _WAIT_RETRIES - 1:
+                            delay = _WAIT_RETRY_INTERVAL_BASE_SECONDS * (retry + 1)
+                            logger.warning(
+                                "[I2VTunnel] Scene %d wait failed (%s), "
+                                "retry %d/%d in %ds...",
+                                i, e, retry + 1, _WAIT_RETRIES, delay,
+                            )
+                            await asyncio.sleep(delay)
+                        else:
+                            # Hard failure after exhausting wait retries — suspend
+                            err_str = str(e).lower()
+                            is_503 = "503" in err_str or "server error" in err_str
+                            logger.error(
+                                "[I2VTunnel] Scene %d hard failure after %d waits (%s), "
+                                "suspending: %s",
+                                i, _WAIT_RETRIES, "503" if is_503 else "other", e,
+                            )
+                            if sm and is_503:
+                                sm.suspend_for_503(self.task_id, delay_minutes=5)
+                            raise
+
+                para.video_file = video_path
+                self.task_manager.update_state(paragraphs=paragraphs)
+                if sm:
+                    sm.advance(self.task_id, i, "scene_%d_done" % i)
+                logger.info(
+                    "[I2VTunnel] Scene %d video saved → %s",
+                    i, video_path,
+                )
+
+                # ── extract last frame + optionally upload to R2 ──
+                self._extract_last_frame(video_path, last_frame_path)
+                if uploader is not None:
+                    url = uploader.upload_frame(last_frame_path)
+                    if url:
+                        if sm:
+                            sm.advance(self.task_id, i, "r2_uploaded")
+                        logger.info(
+                            "[I2VTunnel] Scene %d last frame uploaded → %s "
+                            "(will be injected into scene %d if it exists)",
+                            i, url, i + 1,
+                        )
+                        key = uploader._build_key(last_frame_path)
+                        self._save_task_json(
+                            para_dir, {"r2_url": url, "r2_key": key},
+                        )
+                        if i < total - 1:
+                            consumed_keys[i] = key
+                    else:
+                        logger.warning(
+                            "[I2VTunnel] Scene %d R2 upload failed; "
+                            "scene %d will fall back to T2V.",
+                            i, i + 1,
+                        )
+
+                # ── purge scene i-1's R2 key now that scene i consumed it ──
+                if i > 0 and uploader is not None:
+                    prev_idx = i - 1
+                    prev_key = consumed_keys.pop(prev_idx, None)
+                    if prev_key and uploader.cleanup:
+                        uploader.delete_object_by_key(prev_key)
+
+        # ── final cleanup: purge any dangling keys (last scene's frame).
+        except Exception as e:
+            err_str = str(e).lower()
+            is_503 = "503" in err_str or "server error" in err_str
+            logger.error(
+                "[I2VTunnel] Hard failure in sequential generation: %s (503=%s)", e, is_503,
+            )
+            if sm and is_503:
+                sm.suspend_for_503(self.task_id, delay_minutes=5)
+                logger.info(
+                    "[I2VTunnel] Task %s suspended for 503, will retry in 5 minutes",
+                    self.task_id,
+                )
+                return  # Do NOT re-raise — let the worker pick it up on next tick
+            elif sm:
+                sm.fail(self.task_id, str(e)[:500])
+            raise
+        else:
+            if uploader is not None:
+                uploader.cleanup_all()
+            self.task_manager.update_state(paragraphs=paragraphs)
+            if sm:
+                sm.complete(self.task_id, "")
+            logger.info("[I2VTunnel] Sequential I2V generation complete (%d scenes)", total)
+
+    def _extract_last_frame(self, video_path: str, output_jpg: str) -> None:
+        """FFmpeg -sseof -1 wrapper (via VideoProcessor)."""
+        logger.info(
+            "[I2VTunnel] Extracting last frame: %s → %s",
+            video_path, output_jpg,
+        )
+        VideoProcessor.extract_last_frame(video_path, output_jpg)
+        logger.info(
+            "[I2VTunnel] Last frame extracted: %s",
+            output_jpg,
+        )
 
     async def _generate_audio(self) -> object:
         """生成整段连续 TTS 音频，返回 sub_maker 供字幕步骤。"""

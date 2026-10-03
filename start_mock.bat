@@ -1,0 +1,6 @@
+@echo off
+cd /d D:\agnes-video-generator
+set AGNES_MOCK_API=1
+set AGNES_VIMAX_BRAIN=1
+set AGNES_VIMAX_I2V_TUNNEL=1
+.venv\Scripts\python.exe server.py
